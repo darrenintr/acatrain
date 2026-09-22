@@ -90,6 +90,40 @@ jobs:
           require FIREBASE_DEPLOY_SERVICE_ACCOUNT "$FIREBASE_DEPLOY_SERVICE_ACCOUNT"
           require MCP_EDIT_TOKEN "$MCP_EDIT_TOKEN"
           require MCP_PUBLISH_TOKEN "$MCP_PUBLISH_TOKEN"
+
+          node <<'NODE'
+          function parse(name) {
+            let value = process.env[name];
+            try {
+              let data = JSON.parse(value);
+              if (typeof data === 'string') data = JSON.parse(data);
+              if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('not an object');
+              return data;
+            } catch {
+              console.error(`::error::${name} must contain the complete service-account JSON document`);
+              process.exit(1);
+            }
+          }
+          const runtime = parse('FIREBASE_SERVICE_ACCOUNT');
+          const deploy = parse('FIREBASE_DEPLOY_SERVICE_ACCOUNT');
+          if (runtime.project_id !== process.env.FIREBASE_PROJECT_ID) {
+            console.error('::error::FIREBASE_SERVICE_ACCOUNT project_id does not match FIREBASE_PROJECT_ID');
+            process.exit(1);
+          }
+          if (deploy.project_id !== process.env.FIREBASE_PROJECT_ID) {
+            console.error('::error::FIREBASE_DEPLOY_SERVICE_ACCOUNT project_id does not match FIREBASE_PROJECT_ID');
+            process.exit(1);
+          }
+          if (!runtime.client_email || !runtime.private_key?.includes('PRIVATE KEY')) {
+            console.error('::error::FIREBASE_SERVICE_ACCOUNT is missing client_email or private_key');
+            process.exit(1);
+          }
+          if (!deploy.client_email || !deploy.private_key?.includes('PRIVATE KEY')) {
+            console.error('::error::FIREBASE_DEPLOY_SERVICE_ACCOUNT is missing client_email or private_key');
+            process.exit(1);
+          }
+          NODE
+
           case "$ACATRAIN_API_URL" in
             https://*) ;;
             *) echo "::error::ACATRAIN_API_URL must use https://"; exit 1 ;;
