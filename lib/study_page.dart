@@ -558,7 +558,6 @@ class _StudyPageState extends State<StudyPage> {
 
 class _Flashcard extends StatelessWidget {
   const _Flashcard({
-    super.key,
     required this.item,
     required this.revealed,
     required this.saving,
@@ -691,7 +690,6 @@ class _Flashcard extends StatelessWidget {
 
 class _QuizCard extends StatelessWidget {
   const _QuizCard({
-    super.key,
     required this.item,
     required this.selected,
     required this.saving,
