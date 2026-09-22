@@ -269,7 +269,7 @@ class _StudyActions extends StatelessWidget {
             );
           }
           return Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: cards
                 .map(
                   (card) => Expanded(
