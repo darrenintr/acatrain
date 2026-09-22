@@ -4,13 +4,13 @@ An offline-first Flutter study app with Firebase-backed content and a Cloudflare
 
 ## Included
 
-- Responsive Material 3 home, searchable subject library, flashcards, multiple-choice tests, explanations and mistake practice.
+- Adaptive Material 3 home for phone, tablet and desktop, shared-element study-set transitions, searchable subject library, flashcards, multiple-choice tests, explanations and mistake practice.
 - A simple five-box review schedule (not FSRS), local progress, light/dark themes, 19 original practice items across economics, mathematics and English.
 - Complete content-release downloads, SHA-256 checks, compatibility validation, last-known-good cache and session snapshots. Updating a published study set does not require an APK update.
-- Firebase email/password authentication over REST, also usable from Linux/Windows without native FlutterFire dependencies. Guest and account progress are isolated; account sessions remain in memory only.
+- Firebase Authentication over REST with email/password, account creation, password reset and passwordless email-link sign-in, also usable from Linux/Windows without native FlutterFire dependencies. Guest and account progress are isolated; account sessions remain in memory only.
 - Manual cloud progress merge with per-item last-write-wins and optimistic concurrency retry. No automatic uploads of guest progress.
 - MCP draft editing, validation, atomic publishing, immutable releases and rollback, with separate editor/publisher credentials.
-- CI for Worker tests, Flutter analysis/tests, Web/Android builds, Linux/Windows/macOS builds and unsigned iOS compilation.
+- High-refresh motion: Android requests the highest available display mode; iOS runners enable ProMotion; Web/desktop animations follow system vsync. CI covers Worker tests, Flutter analysis/tests, Web/Android builds, Linux/Windows/macOS builds and unsigned iOS compilation.
 
 The initial UI is English. Study content is Unicode and can be Traditional Chinese; full UI localisation, rich media, LaTeX rendering and a visual authoring screen are not implemented yet.
 
@@ -136,7 +136,7 @@ The second command creates a fresh reviewed-file draft and publishes it. To publ
 
 ### 4. Connect the app and host Web
 
-Copy `config.example.json` to ignored `app-config.json`, then fill in the Worker URL and Firebase Web API key.
+Copy `config.example.json` to ignored `app-config.json`, then fill in the Worker URL, Firebase Web API key and `ACATRAIN_AUTH_CONTINUE_URL` (an authorized HTTPS Firebase Hosting page used by passwordless email-link sign-in).
 
 ```sh
 flutter run -d chrome --web-port 8080 --dart-define-from-file=app-config.json
