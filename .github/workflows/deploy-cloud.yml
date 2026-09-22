@@ -116,22 +116,7 @@ jobs:
             --dart-define=ACATRAIN_API_URL="$ACATRAIN_API_URL" \
             --dart-define=FIREBASE_WEB_API_KEY="$FIREBASE_WEB_API_KEY"
 
-      - name: Deploy Cloudflare Worker
-        working-directory: backend/worker
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-        run: |
-          set -eu
-          allowed="http://localhost:8080,https://${FIREBASE_PROJECT_ID}.web.app,https://${FIREBASE_PROJECT_ID}.firebaseapp.com"
-          if [ -n "${EXTRA_ALLOWED_ORIGINS:-}" ]; then
-            allowed="$allowed,$EXTRA_ALLOWED_ORIGINS"
-          fi
-          npx wrangler@4 deploy \
-            --var "FIREBASE_PROJECT_ID:$FIREBASE_PROJECT_ID" \
-            --var "FIREBASE_WEB_API_KEY:$FIREBASE_WEB_API_KEY" \
-            --var "ALLOWED_ORIGINS:$allowed"
-
-      - name: Install Worker secrets
+      - name: Deploy Cloudflare Worker with secrets
         working-directory: backend/worker
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -140,17 +125,27 @@ jobs:
           MCP_PUBLISH_TOKEN: ${{ secrets.MCP_PUBLISH_TOKEN }}
         run: |
           set -eu
+          secrets_file="$RUNNER_TEMP/acatrain-worker-secrets.json"
           node <<'NODE'
           const fs = require('node:fs');
-          const path = process.env.RUNNER_TEMP + '/acatrain-worker-secrets.json';
-          fs.writeFileSync(path, JSON.stringify({
+          fs.writeFileSync(process.env.RUNNER_TEMP + '/acatrain-worker-secrets.json', JSON.stringify({
             FIREBASE_SERVICE_ACCOUNT: process.env.FIREBASE_SERVICE_ACCOUNT,
             MCP_EDIT_TOKEN: process.env.MCP_EDIT_TOKEN,
             MCP_PUBLISH_TOKEN: process.env.MCP_PUBLISH_TOKEN
           }));
           NODE
-          npx wrangler@4 secret bulk "$RUNNER_TEMP/acatrain-worker-secrets.json"
-          rm -f "$RUNNER_TEMP/acatrain-worker-secrets.json"
+          trap 'rm -f "$secrets_file"' EXIT
+
+          allowed="http://localhost:8080,https://${FIREBASE_PROJECT_ID}.web.app,https://${FIREBASE_PROJECT_ID}.firebaseapp.com"
+          if [ -n "${EXTRA_ALLOWED_ORIGINS:-}" ]; then
+            allowed="$allowed,$EXTRA_ALLOWED_ORIGINS"
+          fi
+
+          npx wrangler@4 deploy \
+            --secrets-file "$secrets_file" \
+            --var "FIREBASE_PROJECT_ID:$FIREBASE_PROJECT_ID" \
+            --var "FIREBASE_WEB_API_KEY:$FIREBASE_WEB_API_KEY" \
+            --var "ALLOWED_ORIGINS:$allowed"
 
       - name: Verify Worker
         run: |
