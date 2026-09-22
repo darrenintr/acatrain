@@ -44,8 +44,12 @@ void main() {
     await tester.pumpWidget(MaterialApp(home: StudyPage(set: set,
       items: [item], quiz: true, store: state)));
     await tester.tap(find.text(item.choices.first)); await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(find.text(item.explanation), 200,
+      scrollable: find.byType(Scrollable));
+    await tester.pumpAndSettle();
     expect(find.text(item.explanation), findsOneWidget);
-    await tester.ensureVisible(find.text('Continue'));
+    await tester.scrollUntilVisible(find.text('Continue'), 150,
+      scrollable: find.byType(Scrollable));
     await tester.tap(find.text('Continue')); await tester.pumpAndSettle();
     expect(state.isWrong(set, item), true);
     expect(find.text('0 / 1 correct'), findsOneWidget);
