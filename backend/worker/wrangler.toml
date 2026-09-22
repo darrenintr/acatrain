@@ -1,0 +1,14 @@
+name = "acatrain-api"
+main = "src/index.mjs"
+compatibility_date = "2025-11-25"
+workers_dev = true
+
+[vars]
+FIREBASE_PROJECT_ID = "replace-with-project-id"
+FIREBASE_WEB_API_KEY = "replace-with-firebase-web-api-key"
+ALLOWED_ORIGINS = "http://localhost:8080"
+
+# Set secrets with wrangler secret put (never commit credentials):
+# FIREBASE_SERVICE_ACCOUNT: compact JSON, dedicated roles/datastore.user account
+# MCP_EDIT_TOKEN: random 32+ character token for AI draft editing
+# MCP_PUBLISH_TOKEN: DIFFERENT random token, retained by the human publisher

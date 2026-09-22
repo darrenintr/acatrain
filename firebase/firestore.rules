@@ -1,0 +1,17 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /users/{uid}/state/progress {
+      function owner() { return request.auth != null && request.auth.uid == uid; }
+      allow get, delete: if owner();
+      allow create, update: if owner()
+        && request.resource.data.keys().hasAll(['payload'])
+        && request.resource.data.keys().hasOnly(['payload'])
+        && request.resource.data.payload is string
+        && request.resource.data.payload.size() <= 131072;
+    }
+    // Worker service-account IAM is the only publishing path.
+    // Public clients cannot read drafts or write releases/config/audit.
+    match /{document=**} { allow read, write: if false; }
+  }
+}

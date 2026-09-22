@@ -1,0 +1,113 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  worker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm test --prefix backend/worker
+      - run: node tool/check-content.mjs
+  flutter:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.44.0'
+          channel: stable
+          cache: true
+      - run: node tool/bootstrap.mjs --platforms=android,web
+      - run: flutter pub get
+      - run: dart format lib test
+      - run: flutter analyze --no-fatal-infos
+      - run: flutter test
+      - name: Build web
+        run: flutter build web --release --dart-define=ACATRAIN_API_URL="$ACATRAIN_API_URL" --dart-define=FIREBASE_WEB_API_KEY="$FIREBASE_WEB_API_KEY"
+        env:
+          ACATRAIN_API_URL: ${{ vars.ACATRAIN_API_URL }}
+          FIREBASE_WEB_API_KEY: ${{ vars.FIREBASE_WEB_API_KEY }}
+      - name: Build installable Android debug APK
+        run: flutter build apk --debug --dart-define=ACATRAIN_API_URL="$ACATRAIN_API_URL" --dart-define=FIREBASE_WEB_API_KEY="$FIREBASE_WEB_API_KEY"
+        env:
+          ACATRAIN_API_URL: ${{ vars.ACATRAIN_API_URL }}
+          FIREBASE_WEB_API_KEY: ${{ vars.FIREBASE_WEB_API_KEY }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: acatrain-web
+          path: build/web
+      - uses: actions/upload-artifact@v4
+        with:
+          name: acatrain-android-debug
+          path: build/app/outputs/flutter-apk/app-debug.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: acatrain-resolved-dependencies
+          path: pubspec.lock
+  desktop:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform: linux
+          - os: windows-latest
+            platform: windows
+          - os: macos-latest
+            platform: macos
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.44.0'
+          channel: stable
+          cache: true
+      - if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev
+      - run: node tool/bootstrap.mjs --platforms=${{ matrix.platform }}
+      - run: flutter pub get
+      - run: flutter build ${{ matrix.platform }} --release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: acatrain-${{ matrix.platform }}-demo
+          path: |
+            build/linux/x64/release/bundle
+            build/windows/x64/runner/Release
+            build/macos/Build/Products/Release/*.app
+  ios-compile:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.44.0'
+          channel: stable
+          cache: true
+      - run: node tool/bootstrap.mjs --platforms=ios
+      - run: flutter pub get
+      - run: flutter build ios --release --no-codesign

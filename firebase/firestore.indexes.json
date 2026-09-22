@@ -1,0 +1,10 @@
+{
+  "indexes": [],
+  "fieldOverrides": [
+    { "collectionGroup": "releases", "fieldPath": "payload", "indexes": [] },
+    { "collectionGroup": "drafts", "fieldPath": "payload", "indexes": [] },
+    { "collectionGroup": "config", "fieldPath": "payload", "indexes": [] },
+    { "collectionGroup": "audit", "fieldPath": "payload", "indexes": [] },
+    { "collectionGroup": "state", "fieldPath": "payload", "indexes": [] }
+  ]
+}

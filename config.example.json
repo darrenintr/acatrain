@@ -1,0 +1,4 @@
+{
+  "ACATRAIN_API_URL": "https://acatrain-api.YOUR-SUBDOMAIN.workers.dev",
+  "FIREBASE_WEB_API_KEY": "YOUR_FIREBASE_WEB_API_KEY"
+}

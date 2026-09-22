@@ -1,0 +1,212 @@
+{
+  "schemaVersion": 1,
+  "minAppBuild": 1,
+  "sets": [
+    {
+      "id": "econ-market-structure",
+      "title": "Market structure essentials",
+      "subject": "Economics",
+      "description": "Original introductory practice: competition, entry barriers and price discrimination.",
+      "items": [
+        {
+          "id": "competition",
+          "revision": 1,
+          "type": "flashcard",
+          "prompt": "What is a price taker?",
+          "answer": "A seller that accepts the market price because it cannot individually influence that price."
+        },
+        {
+          "id": "barriers",
+          "revision": 1,
+          "type": "flashcard",
+          "prompt": "What is a barrier to entry?",
+          "answer": "An obstacle that makes it difficult for new firms to enter a market."
+        },
+        {
+          "id": "differentiation",
+          "revision": 1,
+          "type": "flashcard",
+          "prompt": "What is product differentiation?",
+          "answer": "Differences, real or perceived, between the products offered by different sellers."
+        },
+        {
+          "id": "price-discrimination",
+          "revision": 1,
+          "type": "flashcard",
+          "prompt": "What is price discrimination?",
+          "answer": "Selling the same product at different prices when the price differences are not explained by cost differences."
+        },
+        {
+          "id": "perfect",
+          "revision": 1,
+          "type": "mcq",
+          "prompt": "Which feature best fits perfect competition?",
+          "choices": [
+            "One seller",
+            "Identical products and many sellers",
+            "A legal monopoly",
+            "No buyers"
+          ],
+          "correctIndex": 1,
+          "explanation": "Perfect competition is characterised by many sellers offering a homogeneous product."
+        },
+        {
+          "id": "entry",
+          "revision": 1,
+          "type": "mcq",
+          "prompt": "Which is an example of a legal barrier to entry?",
+          "choices": [
+            "A patent protecting an invention",
+            "Many customers",
+            "A falling market price",
+            "Free online advertising"
+          ],
+          "correctIndex": 0,
+          "explanation": "A patent grants legal protection that can prevent competitors from using the protected invention."
+        },
+        {
+          "id": "resale",
+          "revision": 1,
+          "type": "mcq",
+          "prompt": "Why does preventing resale help price discrimination?",
+          "choices": [
+            "It makes production free",
+            "It stops lower-price customers reselling to higher-price customers",
+            "It removes all competition",
+            "It guarantees profit"
+          ],
+          "correctIndex": 1,
+          "explanation": "Resale would undermine separate prices by allowing higher-price customers to buy through the lower-price group."
+        }
+      ]
+    },
+    {
+      "id": "math-algebra",
+      "title": "Algebra without the usual traps",
+      "subject": "Mathematics",
+      "description": "Expansion, factorisation and checking quadratic roots. Try each calculation before flipping.",
+      "items": [
+        {
+          "id": "difference",
+          "revision": 1,
+          "type": "flashcard",
+          "prompt": "Simplify (1 + x)^2 - (1 - x)^2.",
+          "answer": "4x. Expand both brackets, then distribute the minus sign to every term in the second bracket."
+        },
+        {
+          "id": "squares",
+          "revision": 1,
+          "type": "flashcard",
+          "prompt": "Factorise a^2 - b^2.",
+          "answer": "(a + b)(a - b)"
+        },
+        {
+          "id": "discriminant",
+          "revision": 1,
+          "type": "flashcard",
+          "prompt": "What does b^2 - 4ac tell you about a quadratic equation?",
+          "answer": "Positive: two distinct real roots. Zero: one repeated real root. Negative: no real roots."
+        },
+        {
+          "id": "grouping",
+          "revision": 1,
+          "type": "flashcard",
+          "prompt": "Factorise (x + y)^2 + c(x + y).",
+          "answer": "(x + y)(x + y + c). Treat x + y as one common factor."
+        },
+        {
+          "id": "expand",
+          "revision": 1,
+          "type": "mcq",
+          "prompt": "Expand (x - 3)^2.",
+          "choices": [
+            "x^2 - 9",
+            "x^2 - 3x + 9",
+            "x^2 - 6x + 9",
+            "x^2 + 6x + 9"
+          ],
+          "correctIndex": 2,
+          "explanation": "Use (a - b)^2 = a^2 - 2ab + b^2. The middle term is -6x."
+        },
+        {
+          "id": "roots",
+          "revision": 1,
+          "type": "mcq",
+          "prompt": "How many real roots does x^2 + x + 6 = 0 have?",
+          "choices": [
+            "0",
+            "1",
+            "2",
+            "6"
+          ],
+          "correctIndex": 0,
+          "explanation": "The discriminant is 1 - 24 = -23, which is negative."
+        }
+      ]
+    },
+    {
+      "id": "english-conditionals",
+      "title": "Conditionals: from facts to regrets",
+      "subject": "English",
+      "description": "Practise common conditional patterns and choose the form that matches the meaning.",
+      "items": [
+        {
+          "id": "zero",
+          "revision": 1,
+          "type": "flashcard",
+          "prompt": "What is the usual zero conditional pattern?",
+          "answer": "If + present simple, present simple. Example: If water reaches its boiling point, it boils."
+        },
+        {
+          "id": "first",
+          "revision": 1,
+          "type": "flashcard",
+          "prompt": "What is a common first conditional pattern?",
+          "answer": "If + present simple, will + base verb. Example: If I finish early, I will call you."
+        },
+        {
+          "id": "second",
+          "revision": 1,
+          "type": "flashcard",
+          "prompt": "How do we describe an unreal present situation?",
+          "answer": "If + past simple, would + base verb. Example: If I had more time, I would practise daily."
+        },
+        {
+          "id": "third",
+          "revision": 1,
+          "type": "flashcard",
+          "prompt": "How do we describe an unreal past situation?",
+          "answer": "If + past perfect, would have + past participle. Example: If I had left earlier, I would have caught the bus."
+        },
+        {
+          "id": "past",
+          "revision": 1,
+          "type": "mcq",
+          "prompt": "If she had studied, she ___ the test.",
+          "choices": [
+            "passes",
+            "will pass",
+            "would have passed",
+            "would pass yesterday"
+          ],
+          "correctIndex": 2,
+          "explanation": "Both the condition and its imagined result refer to the past, so use the third conditional."
+        },
+        {
+          "id": "future",
+          "revision": 1,
+          "type": "mcq",
+          "prompt": "If it rains tomorrow, we ___ at home.",
+          "choices": [
+            "would have stayed",
+            "will stay",
+            "stayed",
+            "had stayed"
+          ],
+          "correctIndex": 1,
+          "explanation": "This is a possible future condition: present simple in the if-clause, will in the main clause."
+        }
+      ]
+    }
+  ]
+}

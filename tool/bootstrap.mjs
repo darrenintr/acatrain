@@ -1,0 +1,40 @@
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { spawnSync } from 'node:child_process';
+const supported = ['android', 'ios', 'web', 'linux', 'windows', 'macos'];
+const requested = process.argv.find(a => a.startsWith('--platforms='))?.split('=')[1]?.split(',') ?? supported;
+if (requested.some(p => !supported.includes(p))) throw new Error('Unsupported platform');
+if (!fs.existsSync('pubspec.yaml')) throw new Error('Run this script from the repository root');
+const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'acatrain-'));
+try {
+  const target = path.join(temp, 'acatrain');
+  const run = spawnSync(process.platform === 'win32' ? 'flutter.bat' : 'flutter',
+    ['create', '--empty', '--no-pub', '--org', 'io.github.darrenintr', '--project-name', 'acatrain', `--platforms=${requested.join(',')}`, target],
+    { stdio: 'inherit', shell: process.platform === 'win32' });
+  if (run.error) throw run.error;
+  if (run.status !== 0) throw new Error('flutter create failed');
+  for (const platform of [...requested, '.metadata']) {
+    const source = path.join(target, platform);
+    if (!fs.existsSync(platform) && fs.existsSync(source)) fs.cpSync(source, platform, { recursive: true });
+  }
+  const manifest = 'android/app/src/main/AndroidManifest.xml';
+  if (fs.existsSync(manifest)) {
+    let xml = fs.readFileSync(manifest, 'utf8');
+    if (!xml.includes('android.permission.INTERNET')) {
+      xml = xml.replace(/(<manifest[^>]*>)/, '$1\n    <uses-permission android:name="android.permission.INTERNET"/>');
+      fs.writeFileSync(manifest, xml);
+    }
+  }
+  for (const name of ['DebugProfile', 'Release']) {
+    const file = `macos/Runner/${name}.entitlements`;
+    if (fs.existsSync(file)) {
+      let xml = fs.readFileSync(file, 'utf8');
+      if (!xml.includes('com.apple.security.network.client')) {
+        xml = xml.replace('</dict>', '    <key>com.apple.security.network.client</key>\n    <true/>\n</dict>');
+        fs.writeFileSync(file, xml);
+      }
+    }
+  }
+  console.log('Platform runners are ready. Existing application code was not overwritten.');
+} finally { fs.rmSync(temp, { recursive: true, force: true }); }
