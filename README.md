@@ -66,7 +66,7 @@ Create these **Repository secrets**:
 | `MCP_EDIT_TOKEN` | Random 32+ character content-editor token |
 | `MCP_PUBLISH_TOKEN` | A different random 32+ character publisher token |
 
-The Firebase deployment service account is separate from the runtime Worker account. Grant it only the permissions needed to deploy Firebase Hosting, Firestore rules and indexes for this project. Do not put either service-account JSON or MCP token into repository files or Actions Variables.
+The Firebase deployment service account is separate from the runtime Worker account. For the simplest setup, grant it **Firebase Develop Admin** (`roles/firebase.developAdmin`), which covers the Firebase development/deployment operations used here. The runtime Worker account should remain limited to **Cloud Datastore User** (`roles/datastore.user`). Do not put either service-account JSON or MCP token into repository files or Actions Variables.
 
 Then open:
 
