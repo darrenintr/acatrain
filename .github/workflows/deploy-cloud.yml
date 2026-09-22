@@ -1,0 +1,170 @@
+name: Deploy Cloud
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish_seed:
+        description: Publish assets/seed.json as live content after deployment
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: acatrain-production-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Firebase + Cloudflare
+    runs-on: ubuntu-latest
+    env:
+      FIREBASE_PROJECT_ID: ${{ vars.FIREBASE_PROJECT_ID }}
+      FIREBASE_WEB_API_KEY: ${{ vars.FIREBASE_WEB_API_KEY }}
+      ACATRAIN_API_URL: ${{ vars.ACATRAIN_API_URL }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+      EXTRA_ALLOWED_ORIGINS: ${{ vars.EXTRA_ALLOWED_ORIGINS }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.44.0'
+          channel: stable
+          cache: true
+
+      - name: Validate deployment configuration
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          FIREBASE_DEPLOY_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_DEPLOY_SERVICE_ACCOUNT }}
+          MCP_EDIT_TOKEN: ${{ secrets.MCP_EDIT_TOKEN }}
+          MCP_PUBLISH_TOKEN: ${{ secrets.MCP_PUBLISH_TOKEN }}
+        run: |
+          set -eu
+          require() {
+            name="$1"
+            value="$2"
+            if [ -z "$value" ]; then
+              echo "::error::Missing GitHub Actions configuration: $name"
+              exit 1
+            fi
+          }
+          require FIREBASE_PROJECT_ID "$FIREBASE_PROJECT_ID"
+          require FIREBASE_WEB_API_KEY "$FIREBASE_WEB_API_KEY"
+          require ACATRAIN_API_URL "$ACATRAIN_API_URL"
+          require CLOUDFLARE_ACCOUNT_ID "$CLOUDFLARE_ACCOUNT_ID"
+          require CLOUDFLARE_API_TOKEN "$CLOUDFLARE_API_TOKEN"
+          require FIREBASE_SERVICE_ACCOUNT "$FIREBASE_SERVICE_ACCOUNT"
+          require FIREBASE_DEPLOY_SERVICE_ACCOUNT "$FIREBASE_DEPLOY_SERVICE_ACCOUNT"
+          require MCP_EDIT_TOKEN "$MCP_EDIT_TOKEN"
+          require MCP_PUBLISH_TOKEN "$MCP_PUBLISH_TOKEN"
+          case "$ACATRAIN_API_URL" in
+            https://*) ;;
+            *) echo "::error::ACATRAIN_API_URL must use https://"; exit 1 ;;
+          esac
+          if [ ${#MCP_EDIT_TOKEN} -lt 32 ] || [ ${#MCP_PUBLISH_TOKEN} -lt 32 ]; then
+            echo "::error::MCP tokens must each be at least 32 characters."
+            exit 1
+          fi
+          if [ "$MCP_EDIT_TOKEN" = "$MCP_PUBLISH_TOKEN" ]; then
+            echo "::error::MCP_EDIT_TOKEN and MCP_PUBLISH_TOKEN must be different."
+            exit 1
+          fi
+
+      - name: Test content backend
+        run: |
+          npm test --prefix backend/worker
+          node tool/check-content.mjs
+
+      - name: Prepare Flutter web
+        run: |
+          node tool/bootstrap.mjs --platforms=web
+          flutter pub get
+          flutter build web --release \
+            --dart-define=ACATRAIN_API_URL="$ACATRAIN_API_URL" \
+            --dart-define=FIREBASE_WEB_API_KEY="$FIREBASE_WEB_API_KEY"
+
+      - name: Deploy Cloudflare Worker
+        working-directory: backend/worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          set -eu
+          allowed="http://localhost:8080,https://${FIREBASE_PROJECT_ID}.web.app,https://${FIREBASE_PROJECT_ID}.firebaseapp.com"
+          if [ -n "${EXTRA_ALLOWED_ORIGINS:-}" ]; then
+            allowed="$allowed,$EXTRA_ALLOWED_ORIGINS"
+          fi
+          npx wrangler@4 deploy \
+            --var "FIREBASE_PROJECT_ID:$FIREBASE_PROJECT_ID" \
+            --var "FIREBASE_WEB_API_KEY:$FIREBASE_WEB_API_KEY" \
+            --var "ALLOWED_ORIGINS:$allowed"
+
+      - name: Install Worker secrets
+        working-directory: backend/worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          MCP_EDIT_TOKEN: ${{ secrets.MCP_EDIT_TOKEN }}
+          MCP_PUBLISH_TOKEN: ${{ secrets.MCP_PUBLISH_TOKEN }}
+        run: |
+          set -eu
+          node <<'NODE'
+          const fs = require('node:fs');
+          const path = process.env.RUNNER_TEMP + '/acatrain-worker-secrets.json';
+          fs.writeFileSync(path, JSON.stringify({
+            FIREBASE_SERVICE_ACCOUNT: process.env.FIREBASE_SERVICE_ACCOUNT,
+            MCP_EDIT_TOKEN: process.env.MCP_EDIT_TOKEN,
+            MCP_PUBLISH_TOKEN: process.env.MCP_PUBLISH_TOKEN
+          }));
+          NODE
+          npx wrangler@4 secret bulk "$RUNNER_TEMP/acatrain-worker-secrets.json"
+          rm -f "$RUNNER_TEMP/acatrain-worker-secrets.json"
+
+      - name: Verify Worker
+        run: |
+          set -eu
+          curl --fail --silent --show-error --retry 5 --retry-delay 2 --retry-all-errors \
+            "$ACATRAIN_API_URL/health" > "$RUNNER_TEMP/acatrain-health.json"
+          cat "$RUNNER_TEMP/acatrain-health.json"
+          node -e "const h=require(process.env.RUNNER_TEMP+'/acatrain-health.json'); if(!h.ok || !h.configured) process.exit(1)"
+
+      - name: Publish bundled seed content
+        if: ${{ inputs.publish_seed }}
+        env:
+          MCP_PUBLISH_TOKEN: ${{ secrets.MCP_PUBLISH_TOKEN }}
+        run: node tool/publish.mjs --publish assets/seed.json
+
+      - name: Authenticate Firebase deployment
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.FIREBASE_DEPLOY_SERVICE_ACCOUNT }}
+
+      - name: Deploy Firestore rules, indexes and Firebase Hosting
+        run: |
+          npx firebase-tools@latest deploy \
+            --project "$FIREBASE_PROJECT_ID" \
+            --only firestore:rules,firestore:indexes,hosting \
+            --non-interactive
+
+      - name: Deployment summary
+        run: |
+          {
+            echo "## Acatrain production deployment"
+            echo
+            echo "- Worker: $ACATRAIN_API_URL"
+            echo "- Web: https://$FIREBASE_PROJECT_ID.web.app"
+            echo "- Firestore rules/indexes: deployed"
+            if [ "${{ inputs.publish_seed }}" = "true" ]; then
+              echo "- Bundled seed content: published"
+            else
+              echo "- Bundled seed content: not published"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
