@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createWorker } from '../src/index.mjs';
 import { validateContent, AppError, digest } from '../src/content.mjs';
 import { saveDraft, publishDraft, rollbackRelease } from '../src/publishing.mjs';
-import { Firestore } from '../src/firestore.mjs';
+import { Firestore, parseServiceAccount } from '../src/firestore.mjs';
 const sample = () => ({ schemaVersion: 1, minAppBuild: 1, sets: [{ id: 'econ', title: 'Economics', subject: 'Economics', description: 'Practice', items: [{ id: 'q1', revision: 1, type: 'mcq', prompt: 'Which?', choices: ['A', 'B'], correctIndex: 1, explanation: 'Because B.' }] }] });
 class MemoryStore {
   data = new Map(); counter = 0;
@@ -25,6 +25,18 @@ async function publish(db, releaseId, expectedActiveReleaseId = null) {
   const draft = await saveDraft(db, { draftId: releaseId, content: sample() });
   return publishDraft(db, { draftId: releaseId, releaseId, expectedVersion: draft.version, expectedActiveReleaseId });
 }
+
+test('service account parser gives safe configuration errors and accepts wrapped JSON', () => {
+  const service = {
+    project_id: 'acatrain-test',
+    client_email: 'worker@acatrain-test.iam.gserviceaccount.com',
+    private_key: '-----BEGIN PRIVATE KEY-----\\nabc\\n-----END PRIVATE KEY-----\\n'
+  };
+  assert.equal(parseServiceAccount(JSON.stringify(service), 'acatrain-test').project_id, 'acatrain-test');
+  assert.equal(parseServiceAccount(JSON.stringify(JSON.stringify(service)), 'acatrain-test').client_email, service.client_email);
+  assert.throws(() => parseServiceAccount('not-json', 'acatrain-test'), /not valid JSON/);
+  assert.throws(() => parseServiceAccount(JSON.stringify(service), 'other-project'), /project mismatch/);
+});
 
 test('valid content accepted; unknown schemas and executable items rejected', () => {
   assert.deepEqual(validateContent(sample()), []);
