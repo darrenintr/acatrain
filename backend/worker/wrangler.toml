@@ -12,3 +12,6 @@ ALLOWED_ORIGINS = "http://localhost:8080"
 # FIREBASE_SERVICE_ACCOUNT: compact JSON, dedicated roles/datastore.user account
 # MCP_EDIT_TOKEN: random 32+ character token for AI draft editing
 # MCP_PUBLISH_TOKEN: DIFFERENT random token, retained by the human publisher
+
+[secrets]
+required = ["FIREBASE_SERVICE_ACCOUNT", "MCP_EDIT_TOKEN", "MCP_PUBLISH_TOKEN"]
