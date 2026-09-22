@@ -10,7 +10,7 @@ An offline-first Flutter study app with Firebase-backed content and a Cloudflare
 - Firebase email/password authentication over REST, also usable from Linux/Windows without native FlutterFire dependencies. Guest and account progress are isolated; account sessions remain in memory only.
 - Manual cloud progress merge with per-item last-write-wins and optimistic concurrency retry. No automatic uploads of guest progress.
 - MCP draft editing, validation, atomic publishing, immutable releases and rollback, with separate editor/publisher credentials.
-- CI for Worker tests, Flutter analysis/tests, Web/Android builds, Linux/Windows/macOS builds and unsigned iOS compilation.
+- CI for Worker tests, Flutter analysis/tests, Web/Android builds, Linux/Windows/macOS builds and an unsigned iOS IPA artifact.
 
 The initial UI is English. Study content is Unicode and can be Traditional Chinese; full UI localisation, rich media, LaTeX rendering and a visual authoring screen are not implemented yet.
 
@@ -27,7 +27,7 @@ flutter run -d chrome --web-port 8080
 # Or: flutter run -d linux / windows / macos / an attached Android device
 ```
 
-`bootstrap` creates platform runners from the installed Flutter SDK in a temporary directory and copies only missing runners. It never replaces `lib`, tests or `pubspec.yaml`. Android internet permission and macOS outgoing-network entitlements are added. Existing runners are preserved. Generated runners are ignored initially; commit them explicitly before adding native integrations. Platform SDKs/toolchains are still required. iOS device distribution requires Apple signing; the CI job only checks an unsigned build.
+`bootstrap` creates platform runners from the installed Flutter SDK in a temporary directory and copies only missing runners. It never replaces `lib`, tests or `pubspec.yaml`. Android internet permission and macOS outgoing-network entitlements are added. Existing runners are preserved. Generated runners are ignored initially; commit them explicitly before adding native integrations. Platform SDKs/toolchains are still required. iOS device distribution requires Apple signing: CI packages an unsigned IPA, which only becomes installable after you re-sign it.
 
 ```sh
 npm test --prefix backend/worker
@@ -144,7 +144,7 @@ flutter build web --release --dart-define-from-file=app-config.json
 npx firebase-tools deploy --project YOUR_PROJECT_ID --only hosting
 ```
 
-Set the repository **Actions variables** `ACATRAIN_API_URL` and `FIREBASE_WEB_API_KEY` before running CI for cloud-connected Web/APK artifacts. Without them, those builds intentionally run the offline demo. Desktop CI artifacts are also offline demos. APK artifacts are **debug-signed**, not Play Store releases. CI itself does not deploy infrastructure; the separate Deploy Cloud workflow runs manually or for a `[deploy]` commit on `main`.
+Set the repository **Actions variables** `ACATRAIN_API_URL` and `FIREBASE_WEB_API_KEY` before running CI for cloud-connected Web/APK artifacts. Without them, those builds intentionally run the offline demo. Desktop CI artifacts are also offline demos. APK artifacts are **debug-signed**, not Play Store releases. The iOS IPA artifact is unsigned, so it only becomes installable after you re-sign it with your own certificate and provisioning profile. CI itself does not deploy infrastructure; the separate Deploy Cloud workflow runs manually or for a `[deploy]` commit on `main`.
 
 ## Content workflow
 

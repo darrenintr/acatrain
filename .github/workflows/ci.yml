@@ -110,4 +110,22 @@ jobs:
           cache: true
       - run: node tool/bootstrap.mjs --platforms=ios
       - run: flutter pub get
-      - run: flutter build ios --release --no-codesign
+      - name: Build unsigned iOS app
+        run: flutter build ios --release --no-codesign --dart-define=ACATRAIN_API_URL="$ACATRAIN_API_URL" --dart-define=FIREBASE_WEB_API_KEY="$FIREBASE_WEB_API_KEY"
+        env:
+          ACATRAIN_API_URL: ${{ vars.ACATRAIN_API_URL }}
+          FIREBASE_WEB_API_KEY: ${{ vars.FIREBASE_WEB_API_KEY }}
+      - name: Package unsigned IPA
+        run: |
+          set -euo pipefail
+          test -d build/ios/iphoneos/Runner.app
+          rm -rf build/ios/ipa
+          mkdir -p build/ios/ipa/Payload
+          cp -R build/ios/iphoneos/Runner.app build/ios/ipa/Payload/
+          ditto -c -k --sequesterRsrc --keepParent build/ios/ipa/Payload build/ios/ipa/acatrain-unsigned.ipa
+          ls -lh build/ios/ipa/acatrain-unsigned.ipa
+      - uses: actions/upload-artifact@v4
+        with:
+          name: acatrain-ios-unsigned-ipa
+          path: build/ios/ipa/acatrain-unsigned.ipa
+          if-no-files-found: error
