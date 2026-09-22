@@ -358,7 +358,7 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
         Text(
           'Make room for learning.',
           style: theme.textTheme.displaySmall?.copyWith(
-            fontWeight: FontWeight.w750,
+            fontWeight: FontWeight.w700,
             letterSpacing: -1.4,
           ),
         ),
@@ -532,7 +532,7 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
                               style: Theme.of(context)
                                   .textTheme
                                   .titleLarge
-                                  ?.copyWith(fontWeight: FontWeight.w650),
+                                  ?.copyWith(fontWeight: FontWeight.w600),
                             ),
                           ),
                           const SizedBox(height: 8),
@@ -594,7 +594,7 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
                           Text(
                             set.title,
                             style: theme.textTheme.titleLarge?.copyWith(
-                              fontWeight: FontWeight.w650,
+                              fontWeight: FontWeight.w600,
                             ),
                           ),
                           const SizedBox(height: 6),
@@ -763,7 +763,7 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
             child: Text(
               title,
               style: theme.textTheme.titleLarge?.copyWith(
-                fontWeight: FontWeight.w650,
+                fontWeight: FontWeight.w600,
               ),
             ),
           ),
@@ -824,7 +824,7 @@ class _TodayHero extends StatelessWidget {
               Text(
                 '${store.totalDue} items ready to review',
                 style: theme.textTheme.headlineMedium?.copyWith(
-                  fontWeight: FontWeight.w650,
+                  fontWeight: FontWeight.w600,
                   letterSpacing: -0.5,
                 ),
               ),
@@ -955,7 +955,7 @@ class _SettingsCard extends StatelessWidget {
                       Text(
                         title,
                         style: theme.textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.w650,
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
                       const SizedBox(height: 5),
