@@ -3,24 +3,57 @@ const tokenCache = new Map();
 const enc = new TextEncoder();
 const b64url = bytes => btoa(String.fromCharCode(...bytes)).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
 
+export function parseServiceAccount(raw, projectId) {
+  assert(typeof raw === 'string' && raw.trim(), 'Firebase service account is not configured', 503);
+  let service;
+  try {
+    service = JSON.parse(raw);
+    // Be tolerant of a JSON document that was accidentally stored as a quoted JSON string.
+    if (typeof service === 'string') service = JSON.parse(service);
+  } catch {
+    throw new AppError(503, 'FIREBASE_SERVICE_ACCOUNT is not valid JSON');
+  }
+  assert(service && typeof service === 'object' && !Array.isArray(service), 'FIREBASE_SERVICE_ACCOUNT must contain a JSON object', 503);
+  assert(service.project_id === projectId, 'Service account project mismatch', 503);
+  assert(typeof service.client_email === 'string' && service.client_email.includes('@'), 'Service account client_email is missing', 503);
+  assert(typeof service.private_key === 'string' && service.private_key.includes('PRIVATE KEY'), 'Service account private_key is missing', 503);
+  service.private_key = service.private_key.replace(/\\n/g, '\n');
+  return service;
+}
+
 // Service-account credentials never leave the Worker. User requests use their own ID token.
 export async function accessToken(env, fetcher = fetch) {
-  assert(env.FIREBASE_SERVICE_ACCOUNT, 'Firebase service account is not configured', 503);
   const raw = env.FIREBASE_SERVICE_ACCOUNT;
+  const service = parseServiceAccount(raw, env.FIREBASE_PROJECT_ID);
   const cached = tokenCache.get(raw);
   if (cached && cached.until > Date.now()) return cached.token;
-  const service = JSON.parse(raw);
-  assert(service.project_id === env.FIREBASE_PROJECT_ID, 'Service account project mismatch', 503);
+
   const now = Math.floor(Date.now() / 1000);
   const header = b64url(enc.encode(JSON.stringify({ alg: 'RS256', typ: 'JWT' })));
   const claims = b64url(enc.encode(JSON.stringify({ iss: service.client_email, scope: 'https://www.googleapis.com/auth/datastore', aud: 'https://oauth2.googleapis.com/token', iat: now, exp: now + 3600 })));
-  const binary = atob(service.private_key.replace(/-----[^-]+-----/g, '').replace(/\s/g, ''));
-  const key = await crypto.subtle.importKey('pkcs8', Uint8Array.from(binary, c => c.charCodeAt(0)), { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['sign']);
+
+  let key;
+  try {
+    const binary = atob(service.private_key.replace(/-----[^-]+-----/g, '').replace(/\s/g, ''));
+    key = await crypto.subtle.importKey('pkcs8', Uint8Array.from(binary, c => c.charCodeAt(0)), { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['sign']);
+  } catch {
+    throw new AppError(503, 'Firebase service account private key is invalid');
+  }
+
   const signature = await crypto.subtle.sign('RSASSA-PKCS1-v1_5', key, enc.encode(`${header}.${claims}`));
-  const response = await fetcher('https://oauth2.googleapis.com/token', { method: 'POST', body: new URLSearchParams({ grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer', assertion: `${header}.${claims}.${b64url(new Uint8Array(signature))}` }) });
-  const json = await response.json();
-  assert(response.ok && json.access_token, 'Firebase authorization failed', 502);
-  tokenCache.set(raw, { token: json.access_token, until: Date.now() + (json.expires_in - 120) * 1000 });
+  let response;
+  try {
+    response = await fetcher('https://oauth2.googleapis.com/token', { method: 'POST', body: new URLSearchParams({ grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer', assertion: `${header}.${claims}.${b64url(new Uint8Array(signature))}` }) });
+  } catch {
+    throw new AppError(502, 'Could not reach Google OAuth for Firebase authorization');
+  }
+
+  let json;
+  try { json = await response.json(); }
+  catch { throw new AppError(502, 'Google OAuth returned an invalid response'); }
+
+  assert(response.ok && json.access_token, 'Firebase authorization failed; check that the service-account key is active', 502);
+  tokenCache.set(raw, { token: json.access_token, until: Date.now() + ((Number(json.expires_in) || 3600) - 120) * 1000 });
   return json.access_token;
 }
 
