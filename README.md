@@ -42,6 +42,56 @@ Native apps retain bundled and downloaded study data for offline use. Web caches
 
 Start with **Firebase Spark: Authentication + Firestore Standard + classic Hosting** and **Cloudflare Workers Free**. No Firebase Cloud Functions, App Hosting, Firebase Storage, R2 or model API is required by this MVP. Free-tier quotas are finite; this is not an unlimited free service. Firebase Storage now requires Blaze, so it is deliberately excluded. See `docs/architecture.md` for official references and limits.
 
+### Phone-only deployment with GitHub Actions
+
+If you do not have a computer available, the repository includes **Actions > Deploy Cloud**. Once the values below are configured, the complete deployment can be started from GitHub in a mobile browser.
+
+In **GitHub > acatrain > Settings > Secrets and variables > Actions**, create these **Variables**:
+
+| Variable | Value |
+| --- | --- |
+| `FIREBASE_PROJECT_ID` | Firebase project ID, for example `acatrain-12345` |
+| `FIREBASE_WEB_API_KEY` | Firebase Web app API key |
+| `CLOUDFLARE_ACCOUNT_ID` | Cloudflare Account ID |
+| `ACATRAIN_API_URL` | Expected Worker URL, for example `https://acatrain-api.example.workers.dev` |
+| `EXTRA_ALLOWED_ORIGINS` | Optional comma-separated extra Web origins; leave unset if unused |
+
+Create these **Repository secrets**:
+
+| Secret | Purpose |
+| --- | --- |
+| `CLOUDFLARE_API_TOKEN` | Cloudflare API token allowed to edit/deploy Workers |
+| `FIREBASE_SERVICE_ACCOUNT` | Complete JSON for the Worker-only service account with `roles/datastore.user` |
+| `FIREBASE_DEPLOY_SERVICE_ACCOUNT` | Complete JSON for the GitHub deployment service account |
+| `MCP_EDIT_TOKEN` | Random 32+ character content-editor token |
+| `MCP_PUBLISH_TOKEN` | A different random 32+ character publisher token |
+
+The Firebase deployment service account is separate from the runtime Worker account. Grant it only the permissions needed to deploy Firebase Hosting, Firestore rules and indexes for this project. Do not put either service-account JSON or MCP token into repository files or Actions Variables.
+
+Then open:
+
+```text
+GitHub repository
+→ Actions
+→ Deploy Cloud
+→ Run workflow
+```
+
+Turn on **Publish assets/seed.json as live content** only for the first deployment, or when you intentionally want the bundled seed file to replace the current live study content. The workflow:
+
+```text
+validates configuration
+→ tests the Worker/content schema
+→ builds Flutter Web with the production API settings
+→ deploys the Cloudflare Worker
+→ installs Worker secrets
+→ verifies /health
+→ optionally publishes seed content
+→ deploys Firestore rules/indexes and Firebase Hosting
+```
+
+The final GitHub Actions summary displays the Worker and Firebase Hosting URLs. This workflow deliberately does not put cloud credentials into the Flutter build.
+
 ### 1. Firebase
 
 Create a Firebase project, create a **Firestore Standard** database `(default)`, enable Authentication > Email/Password, and register a Web app to obtain its API key. The Web API key is public client configuration, not an admin credential. Do not enable billing just to run this MVP.
