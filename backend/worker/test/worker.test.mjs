@@ -145,6 +145,21 @@ test('Firestore commit is a single atomic RPC with create/update preconditions',
   assert.equal(captured.headers.Authorization, 'Bearer id-token');
 });
 
+test('Firestore does not call fetch with the database as its receiver', async () => {
+  const methods = [];
+  const db = new Firestore({ FIREBASE_PROJECT_ID: 'acatrain-test' }, 'test-token', async function (_url, init) {
+    // workerd rejects a Firestore receiver even though Node fetch permits it.
+    assert.equal(this, undefined);
+    methods.push(init.method);
+    return init.method === 'GET'
+      ? Response.json({ fields: { payload: { stringValue: '{"releaseId":"r1"}' } }, updateTime: 'v1' })
+      : Response.json({ writeResults: [] });
+  });
+  assert.deepEqual(await db.get('config/active'), { value: { releaseId: 'r1' }, version: 'v1' });
+  await db.commit([{ path: 'drafts/new', value: {} }]);
+  assert.deepEqual(methods, ['GET', 'POST']);
+});
+
 test('Firestore write failures are not mistaken for missing documents', async () => {
   const env = { FIREBASE_PROJECT_ID: 'acatrain-test' };
   const missing = new Firestore(env, 'token', async () => Response.json({ error: { status: 'NOT_FOUND' } }, { status: 404 }));

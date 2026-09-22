@@ -77,7 +77,7 @@ GitHub repository
 → Run workflow
 ```
 
-Turn on **Publish assets/seed.json as live content** only for the first deployment, or when you intentionally want the bundled seed file to replace the current live study content. The workflow:
+An empty installation is initialized with `assets/seed.json` automatically. Turn on **Replace existing live content** only when you intentionally want the bundled seed file to replace the current live study content. You can also deploy by pushing a commit to `main` whose message contains `[deploy]`; other pushes run CI without deploying. The workflow:
 
 ```text
 validates configuration
@@ -85,8 +85,9 @@ validates configuration
 → builds Flutter Web with the production API settings
 → deploys the Cloudflare Worker
 → installs Worker secrets
-→ verifies /health
-→ optionally publishes seed content
+→ verifies /health and a real Firestore content read, including Hosting CORS
+→ publishes seed content if empty or explicitly requested
+→ verifies the published release and its SHA-256 checksum
 → deploys Firestore rules/indexes and Firebase Hosting
 ```
 
@@ -143,7 +144,7 @@ flutter build web --release --dart-define-from-file=app-config.json
 npx firebase-tools deploy --project YOUR_PROJECT_ID --only hosting
 ```
 
-Set the repository **Actions variables** `ACATRAIN_API_URL` and `FIREBASE_WEB_API_KEY` before running CI for cloud-connected Web/APK artifacts. Without them, those builds intentionally run the offline demo. Desktop CI artifacts are also offline demos. APK artifacts are **debug-signed**, not Play Store releases. No hosting or infrastructure deployment is automatically performed by CI.
+Set the repository **Actions variables** `ACATRAIN_API_URL` and `FIREBASE_WEB_API_KEY` before running CI for cloud-connected Web/APK artifacts. Without them, those builds intentionally run the offline demo. Desktop CI artifacts are also offline demos. APK artifacts are **debug-signed**, not Play Store releases. CI itself does not deploy infrastructure; the separate Deploy Cloud workflow runs manually or for a `[deploy]` commit on `main`.
 
 ## Content workflow
 

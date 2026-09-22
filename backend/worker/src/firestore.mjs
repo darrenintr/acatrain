@@ -61,7 +61,9 @@ export class Firestore {
   constructor(env, token, fetcher = fetch) {
     assert(/^[a-z][a-z0-9-]{4,61}[a-z0-9]$/.test(env.FIREBASE_PROJECT_ID ?? ''), 'Firebase project ID is not configured', 503);
     this.root = `projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents`;
-    this.token = token; this.fetcher = fetcher;
+    // Workers requires the global fetch receiver, not a Firestore instance.
+    // Call through a closure so injected functions also remain standalone calls.
+    this.token = token; this.fetcher = (...args) => fetcher(...args);
   }
   async request(path, method = 'GET', body) {
     const response = await this.fetcher(`https://firestore.googleapis.com/v1/${path}`, { method, headers: { Authorization: `Bearer ${this.token}`, 'Content-Type': 'application/json' }, ...(body ? { body: JSON.stringify(body) } : {}) });

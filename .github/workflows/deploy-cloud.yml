@@ -1,10 +1,12 @@
 name: Deploy Cloud
 
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
     inputs:
       publish_seed:
-        description: Publish assets/seed.json as live content after deployment
+        description: Replace existing live content with assets/seed.json (empty installations are initialized automatically)
         required: true
         default: false
         type: boolean
@@ -19,6 +21,7 @@ concurrency:
 jobs:
   deploy:
     name: Firebase + Cloudflare
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[deploy]')
     runs-on: ubuntu-latest
     env:
       FIREBASE_PROJECT_ID: ${{ vars.FIREBASE_PROJECT_ID }}
@@ -182,18 +185,25 @@ jobs:
             --var "ALLOWED_ORIGINS:$allowed"
 
       - name: Verify Worker
+        id: verify_worker
         run: |
           set -eu
           curl --fail --silent --show-error --retry 5 --retry-delay 2 --retry-all-errors \
             "$ACATRAIN_API_URL/health" > "$RUNNER_TEMP/acatrain-health.json"
           cat "$RUNNER_TEMP/acatrain-health.json"
           node -e "const h=require(process.env.RUNNER_TEMP+'/acatrain-health.json'); if(!h.ok || !h.configured) process.exit(1)"
+          node tool/verify-deployment.mjs --allow-empty > "$RUNNER_TEMP/acatrain-content.json"
+          cat "$RUNNER_TEMP/acatrain-content.json"
+          node -e "const c=require(process.env.RUNNER_TEMP+'/acatrain-content.json'); console.log('empty='+c.empty)" >> "$GITHUB_OUTPUT"
 
       - name: Publish bundled seed content
-        if: ${{ inputs.publish_seed }}
+        if: ${{ inputs.publish_seed || steps.verify_worker.outputs.empty == 'true' }}
         env:
           MCP_PUBLISH_TOKEN: ${{ secrets.MCP_PUBLISH_TOKEN }}
         run: node tool/publish.mjs --publish assets/seed.json
+
+      - name: Verify published content
+        run: node tool/verify-deployment.mjs
 
       - name: Authenticate Firebase deployment
         uses: google-github-actions/auth@v2
@@ -215,7 +225,7 @@ jobs:
             echo "- Worker: $ACATRAIN_API_URL"
             echo "- Web: https://$FIREBASE_PROJECT_ID.web.app"
             echo "- Firestore rules/indexes: deployed"
-            if [ "${{ inputs.publish_seed }}" = "true" ]; then
+            if [ "${{ inputs.publish_seed || steps.verify_worker.outputs.empty == 'true' }}" = "true" ]; then
               echo "- Bundled seed content: published"
             else
               echo "- Bundled seed content: not published"
