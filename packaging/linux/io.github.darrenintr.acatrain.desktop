@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Acatrain
+Comment=Offline-first study sets
+Exec=acatrain
+Icon=io.github.darrenintr.acatrain
+Terminal=false
+Categories=Education;
+StartupNotify=true

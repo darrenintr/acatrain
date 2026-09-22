@@ -10,7 +10,7 @@ An offline-first Flutter study app with Firebase-backed content and a Cloudflare
 - Firebase Authentication over REST with email/password, account creation, password reset and passwordless email-link sign-in, also usable from Linux/Windows without native FlutterFire dependencies. Guest and account progress are isolated; account sessions remain in memory only.
 - Manual cloud progress merge with per-item last-write-wins and optimistic concurrency retry. No automatic uploads of guest progress.
 - MCP draft editing, validation, atomic publishing, immutable releases and rollback, with separate editor/publisher credentials.
-- High-refresh motion: Android requests the highest available display mode; iOS runners enable ProMotion; Web/desktop animations follow system vsync. CI covers Worker tests, Flutter analysis/tests, Web/Android builds, Linux/Windows/macOS builds and unsigned iOS compilation.
+- High-refresh motion: Android requests the highest available display mode; iOS runners enable ProMotion; Web/desktop animations follow system vsync. CI validates every platform and packages APK, DEB, RPM, AppImage, Flatpak, DMG and unsigned IPA installers.
 
 The initial UI is English. Study content is Unicode and can be Traditional Chinese; full UI localisation, rich media, LaTeX rendering and a visual authoring screen are not implemented yet.
 
@@ -27,7 +27,7 @@ flutter run -d chrome --web-port 8080
 # Or: flutter run -d linux / windows / macos / an attached Android device
 ```
 
-`bootstrap` creates platform runners from the installed Flutter SDK in a temporary directory and copies only missing runners. It never replaces `lib`, tests or `pubspec.yaml`. Android internet permission and macOS outgoing-network entitlements are added. Existing runners are preserved. Generated runners are ignored initially; commit them explicitly before adding native integrations. Platform SDKs/toolchains are still required. iOS device distribution requires Apple signing; the CI job only checks an unsigned build.
+`bootstrap` creates platform runners from the installed Flutter SDK in a temporary directory and copies only missing runners. It never replaces `lib`, tests or `pubspec.yaml`. Android internet permission and macOS outgoing-network entitlements are added. Existing runners are preserved. Generated runners are ignored initially; commit them explicitly before adding native integrations. Platform SDKs/toolchains are still required. CI produces an unsigned IPA for inspection/sideload-signing workflows and an unsigned/unnotarized DMG; normal iPhone/iPad distribution still requires Apple signing, and public macOS distribution should be signed and notarized.
 
 ```sh
 npm test --prefix backend/worker
@@ -37,6 +37,20 @@ flutter test
 ```
 
 Native apps retain bundled and downloaded study data for offline use. Web caches study data locally, but offline page reload is not guaranteed: this MVP does not add a custom PWA service worker.
+
+## CI packages
+
+Every CI run builds real installer/package files instead of uploading raw Flutter output directories:
+
+- Android: `.apk`
+- Linux x86_64: `.deb`, `.rpm`, `.AppImage`, `.flatpak`
+- macOS: `.dmg`
+- iOS: unsigned `.ipa`
+- Windows and Web are still compiled as compatibility checks, but no raw directory ZIP artifact is published.
+
+GitHub's Actions artifact service always wraps downloads in a ZIP container. To provide the package files directly, pushes of tags matching `v*` create/update a GitHub Release and attach the APK/DEB/RPM/AppImage/Flatpak/DMG/IPA files as direct release assets.
+
+The Android release APK uses the generated Flutter runner's default signing setup until a production Android keystore is configured. The IPA is intentionally unsigned and the DMG is not notarized.
 
 ## Cloud deployment
 
