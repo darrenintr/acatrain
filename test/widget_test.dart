@@ -15,7 +15,7 @@ void main() {
   }
   testWidgets('mobile and desktop shells render without overflow', (tester) async {
     final state = await store();
-    for (final size in [const Size(390, 844), const Size(1440, 960)]) {
+    for (final size in [const Size(360, 740), const Size(768, 1024), const Size(1440, 960)]) {
       await tester.binding.setSurfaceSize(size);
       await tester.pumpWidget(AcatrainApp(store: state)); await tester.pumpAndSettle();
       expect(find.text('acatrain'), findsOneWidget);
@@ -25,6 +25,26 @@ void main() {
     await tester.binding.setSurfaceSize(null);
     await tester.pumpWidget(const SizedBox()); state.dispose();
   });
+  testWidgets('set page adapts across phone, tablet and desktop', (tester) async {
+    final state = await store();
+    final set = state.bundle.sets.first;
+    for (final size in [
+      const Size(360, 740),
+      const Size(768, 1024),
+      const Size(1440, 960),
+    ]) {
+      await tester.binding.setSurfaceSize(size);
+      await tester.pumpWidget(MaterialApp(home: SetPage(set: set, store: state)));
+      await tester.pumpAndSettle();
+      expect(find.text(set.title), findsOneWidget);
+      expect(find.text('Flashcards'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    }
+    await tester.binding.setSurfaceSize(null);
+    await tester.pumpWidget(const SizedBox());
+    state.dispose();
+  });
+
   testWidgets('flashcard reveal and rating save progress', (tester) async {
     final state = await store(); final set = state.bundle.sets.first;
     await tester.pumpWidget(MaterialApp(home: StudyPage(set: set,
