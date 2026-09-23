@@ -26,6 +26,14 @@ try {
       fs.writeFileSync(manifest, xml);
     }
   }
+  const iosInfo = 'ios/Runner/Info.plist';
+  if (fs.existsSync(iosInfo)) {
+    let xml = fs.readFileSync(iosInfo, 'utf8');
+    if (!xml.includes('CADisableMinimumFrameDurationOnPhone')) {
+      xml = xml.replace('</dict>', '    <key>CADisableMinimumFrameDurationOnPhone</key>\n    <true/>\n</dict>');
+      fs.writeFileSync(iosInfo, xml);
+    }
+  }
   for (const name of ['DebugProfile', 'Release']) {
     const file = `macos/Runner/${name}.entitlements`;
     if (fs.existsSync(file)) {
