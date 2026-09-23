@@ -1,0 +1,54 @@
+{
+  "project_info": {
+    "project_number": "187437119709",
+    "project_id": "acatrain-d2429",
+    "storage_bucket": "acatrain-d2429.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:187437119709:android:462ff618e6c97a75394334",
+        "android_client_info": {
+          "package_name": "io.github.darrenintr.acatrain"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "187437119709-0ccm2lh0ifs9r489l3qd8rdhlcn66duh.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "io.github.darrenintr.acatrain",
+            "certificate_hash": "ab4ee93eec977d5508192971cc138319d0030838"
+          }
+        },
+        {
+          "client_id": "187437119709-ovse5qso4uj31ibc7oviihn04lj2k5lr.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD1iZtAlnPHGBQFZOX2_Dek8DXvqhGFo7w"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "187437119709-ovse5qso4uj31ibc7oviihn04lj2k5lr.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "187437119709-gf9q44es1kn3hbujvn9h0kjphj91j2s0.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "io.github.darrenintr.acatrain"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

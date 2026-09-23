@@ -151,7 +151,8 @@ jobs:
           flutter pub get
           flutter build web --release \
             --dart-define=ACATRAIN_API_URL="$ACATRAIN_API_URL" \
-            --dart-define=FIREBASE_WEB_API_KEY="$FIREBASE_WEB_API_KEY"
+            --dart-define=FIREBASE_WEB_API_KEY="$FIREBASE_WEB_API_KEY" \
+            --dart-define=ACATRAIN_AUTH_CONTINUE_URL="https://${FIREBASE_PROJECT_ID}.web.app"
 
       - name: Deploy Cloudflare Worker with secrets
         working-directory: backend/worker

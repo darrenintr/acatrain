@@ -1,0 +1,12 @@
+# Gradle wrapper files are committed so native Gradle tasks work from a clean checkout.
+/.gradle
+/captures/
+/local.properties
+GeneratedPluginRegistrant.java
+.cxx/
+
+# Remember to never publicly share your keystore.
+# See https://flutter.dev/to/reference-keystore
+key.properties
+**/*.keystore
+**/*.jks

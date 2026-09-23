@@ -1,0 +1,27 @@
+app-id: io.github.darrenintr.acatrain
+runtime: org.freedesktop.Platform
+runtime-version: '25.08'
+sdk: org.freedesktop.Sdk
+command: acatrain
+finish-args:
+  - --share=ipc
+  - --share=network
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --device=dri
+modules:
+  - name: acatrain
+    buildsystem: simple
+    build-commands:
+      - install -d /app/lib/acatrain /app/bin /app/share/applications /app/share/icons/hicolor/scalable/apps
+      - cp -a acatrain data lib /app/lib/acatrain/
+      - ln -s ../lib/acatrain/acatrain /app/bin/acatrain
+      - install -Dm644 io.github.darrenintr.acatrain.desktop /app/share/applications/io.github.darrenintr.acatrain.desktop
+      - install -Dm644 io.github.darrenintr.acatrain.svg /app/share/icons/hicolor/scalable/apps/io.github.darrenintr.acatrain.svg
+    sources:
+      - type: dir
+        path: ../../build/linux/x64/release/bundle
+      - type: file
+        path: io.github.darrenintr.acatrain.desktop
+      - type: file
+        path: io.github.darrenintr.acatrain.svg

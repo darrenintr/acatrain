@@ -2,13 +2,20 @@ name: CI
 on:
   push:
     branches: [main]
+    tags: ['v*']
   pull_request:
   workflow_dispatch:
+
 permissions:
   contents: read
+
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
+
+env:
+  FLUTTER_VERSION: '3.44.0'
+
 jobs:
   worker:
     runs-on: ubuntu-latest
@@ -19,7 +26,9 @@ jobs:
           node-version: '22'
       - run: npm test --prefix backend/worker
       - run: node tool/check-content.mjs
+
   flutter:
+    name: Flutter / Web / Android APK
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -32,48 +41,70 @@ jobs:
           java-version: '17'
       - uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.44.0'
+          flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: stable
           cache: true
-      - run: node tool/bootstrap.mjs --platforms=android,web
+      - name: Verify committed Android runner
+        run: test -f android/app/build.gradle.kts
+      - run: node tool/bootstrap.mjs --platforms=web
       - run: flutter pub get
       - run: dart format lib test
       - run: flutter analyze --no-fatal-infos
       - run: flutter test
+      - name: Resolve package version
+        run: echo "ACATRAIN_VERSION=$(awk '/^version:/ {print $2; exit}' pubspec.yaml)" >> "$GITHUB_ENV"
+      - name: Configure Android release signing
+        shell: bash
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          test -n "$ANDROID_KEYSTORE_BASE64"
+          test -n "$ANDROID_KEYSTORE_PASSWORD"
+          test -n "$ANDROID_KEY_ALIAS"
+          test -n "$ANDROID_KEY_PASSWORD"
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > android/acatrain-release.jks
+          cat > android/key.properties <<EOF
+          storePassword=$ANDROID_KEYSTORE_PASSWORD
+          keyPassword=$ANDROID_KEY_PASSWORD
+          keyAlias=$ANDROID_KEY_ALIAS
+          storeFile=../acatrain-release.jks
+          EOF
       - name: Build web
-        run: flutter build web --release --dart-define=ACATRAIN_API_URL="$ACATRAIN_API_URL" --dart-define=FIREBASE_WEB_API_KEY="$FIREBASE_WEB_API_KEY"
+        run: |
+          flutter build web --release \
+            --dart-define=ACATRAIN_API_URL="$ACATRAIN_API_URL" \
+            --dart-define=FIREBASE_WEB_API_KEY="$FIREBASE_WEB_API_KEY" \
+            --dart-define=ACATRAIN_AUTH_CONTINUE_URL="$ACATRAIN_AUTH_CONTINUE_URL"
         env:
           ACATRAIN_API_URL: ${{ vars.ACATRAIN_API_URL }}
           FIREBASE_WEB_API_KEY: ${{ vars.FIREBASE_WEB_API_KEY }}
-      - name: Build installable Android debug APK
-        run: flutter build apk --debug --dart-define=ACATRAIN_API_URL="$ACATRAIN_API_URL" --dart-define=FIREBASE_WEB_API_KEY="$FIREBASE_WEB_API_KEY"
+          ACATRAIN_AUTH_CONTINUE_URL: ${{ vars.ACATRAIN_AUTH_CONTINUE_URL }}
+      - name: Build Android release APK
+        run: |
+          flutter build apk --release \
+            --dart-define=ACATRAIN_API_URL="$ACATRAIN_API_URL" \
+            --dart-define=FIREBASE_WEB_API_KEY="$FIREBASE_WEB_API_KEY" \
+            --dart-define=ACATRAIN_AUTH_CONTINUE_URL="$ACATRAIN_AUTH_CONTINUE_URL"
+          mkdir -p dist
+          cp build/app/outputs/flutter-apk/app-release.apk "dist/acatrain-${ACATRAIN_VERSION}-android.apk"
         env:
           ACATRAIN_API_URL: ${{ vars.ACATRAIN_API_URL }}
           FIREBASE_WEB_API_KEY: ${{ vars.FIREBASE_WEB_API_KEY }}
+          ACATRAIN_AUTH_CONTINUE_URL: ${{ vars.ACATRAIN_AUTH_CONTINUE_URL }}
       - uses: actions/upload-artifact@v4
         with:
-          name: acatrain-web
-          path: build/web
-      - uses: actions/upload-artifact@v4
-        with:
-          name: acatrain-android-debug
-          path: build/app/outputs/flutter-apk/app-debug.apk
-      - uses: actions/upload-artifact@v4
-        with:
-          name: acatrain-resolved-dependencies
-          path: pubspec.lock
-  desktop:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-latest
-            platform: linux
-          - os: windows-latest
-            platform: windows
-          - os: macos-latest
-            platform: macos
-    runs-on: ${{ matrix.os }}
+          name: acatrain-package-apk
+          path: dist/*.apk
+          compression-level: 0
+          retention-days: 14
+
+  linux-packages:
+    name: Linux / DEB RPM AppImage Flatpak
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -81,22 +112,82 @@ jobs:
           node-version: '22'
       - uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.44.0'
+          flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: stable
           cache: true
-      - if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev
-      - run: node tool/bootstrap.mjs --platforms=${{ matrix.platform }}
+      - name: Install Linux build and packaging tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev \
+            rpm flatpak flatpak-builder curl
+          sudo flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+          sudo flatpak install --noninteractive -y flathub \
+            org.freedesktop.Platform//25.08 \
+            org.freedesktop.Sdk//25.08
+      - run: node tool/bootstrap.mjs --platforms=linux
       - run: flutter pub get
-      - run: flutter build ${{ matrix.platform }} --release
+      - name: Build Linux release
+        run: |
+          flutter build linux --release \
+            --dart-define=ACATRAIN_API_URL="$ACATRAIN_API_URL" \
+            --dart-define=FIREBASE_WEB_API_KEY="$FIREBASE_WEB_API_KEY" \
+            --dart-define=ACATRAIN_AUTH_CONTINUE_URL="$ACATRAIN_AUTH_CONTINUE_URL"
+        env:
+          ACATRAIN_API_URL: ${{ vars.ACATRAIN_API_URL }}
+          FIREBASE_WEB_API_KEY: ${{ vars.FIREBASE_WEB_API_KEY }}
+          ACATRAIN_AUTH_CONTINUE_URL: ${{ vars.ACATRAIN_AUTH_CONTINUE_URL }}
+      - name: Package Linux installers
+        run: tool/package_linux.sh
       - uses: actions/upload-artifact@v4
         with:
-          name: acatrain-${{ matrix.platform }}-demo
-          path: |
-            build/linux/x64/release/bundle
-            build/windows/x64/runner/Release
-            build/macos/Build/Products/Release/*.app
-  ios-compile:
+          name: acatrain-package-deb
+          path: dist/*.deb
+          compression-level: 0
+          retention-days: 14
+      - uses: actions/upload-artifact@v4
+        with:
+          name: acatrain-package-rpm
+          path: dist/*.rpm
+          compression-level: 0
+          retention-days: 14
+      - uses: actions/upload-artifact@v4
+        with:
+          name: acatrain-package-appimage
+          path: dist/*.AppImage
+          compression-level: 0
+          retention-days: 14
+      - uses: actions/upload-artifact@v4
+        with:
+          name: acatrain-package-flatpak
+          path: dist/*.flatpak
+          compression-level: 0
+          retention-days: 14
+
+  windows-build:
+    name: Windows compile check
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - run: node tool/bootstrap.mjs --platforms=windows
+      - run: flutter pub get
+      - name: Build Windows release
+        run: >
+          flutter build windows --release
+          --dart-define=ACATRAIN_API_URL="${{ vars.ACATRAIN_API_URL }}"
+          --dart-define=FIREBASE_WEB_API_KEY="${{ vars.FIREBASE_WEB_API_KEY }}"
+          --dart-define=ACATRAIN_AUTH_CONTINUE_URL="${{ vars.ACATRAIN_AUTH_CONTINUE_URL }}"
+
+  macos-package:
+    name: macOS DMG
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -105,27 +196,85 @@ jobs:
           node-version: '22'
       - uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.44.0'
+          flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: stable
           cache: true
-      - run: node tool/bootstrap.mjs --platforms=ios
+      - run: node tool/bootstrap.mjs --platforms=macos
       - run: flutter pub get
-      - name: Build unsigned iOS app
-        run: flutter build ios --release --no-codesign --dart-define=ACATRAIN_API_URL="$ACATRAIN_API_URL" --dart-define=FIREBASE_WEB_API_KEY="$FIREBASE_WEB_API_KEY"
+      - name: Build macOS release
+        run: |
+          flutter build macos --release \
+            --dart-define=ACATRAIN_API_URL="$ACATRAIN_API_URL" \
+            --dart-define=FIREBASE_WEB_API_KEY="$FIREBASE_WEB_API_KEY" \
+            --dart-define=ACATRAIN_AUTH_CONTINUE_URL="$ACATRAIN_AUTH_CONTINUE_URL"
         env:
           ACATRAIN_API_URL: ${{ vars.ACATRAIN_API_URL }}
           FIREBASE_WEB_API_KEY: ${{ vars.FIREBASE_WEB_API_KEY }}
-      - name: Package unsigned IPA
-        run: |
-          set -euo pipefail
-          test -d build/ios/iphoneos/Runner.app
-          rm -rf build/ios/ipa
-          mkdir -p build/ios/ipa/Payload
-          cp -R build/ios/iphoneos/Runner.app build/ios/ipa/Payload/
-          ditto -c -k --sequesterRsrc --keepParent build/ios/ipa/Payload build/ios/ipa/acatrain-unsigned.ipa
-          ls -lh build/ios/ipa/acatrain-unsigned.ipa
+          ACATRAIN_AUTH_CONTINUE_URL: ${{ vars.ACATRAIN_AUTH_CONTINUE_URL }}
+      - name: Package DMG
+        run: tool/package_macos.sh
       - uses: actions/upload-artifact@v4
         with:
-          name: acatrain-ios-unsigned-ipa
-          path: build/ios/ipa/acatrain-unsigned.ipa
-          if-no-files-found: error
+          name: acatrain-package-dmg
+          path: dist/*.dmg
+          compression-level: 0
+          retention-days: 14
+
+  ios-package:
+    name: iOS unsigned IPA
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - name: Verify committed iOS runner
+        run: test -f ios/Runner/Info.plist
+      - run: flutter pub get
+      - name: Build unsigned iOS release
+        run: |
+          flutter build ios --release --no-codesign \
+            --dart-define=ACATRAIN_API_URL="$ACATRAIN_API_URL" \
+            --dart-define=FIREBASE_WEB_API_KEY="$FIREBASE_WEB_API_KEY" \
+            --dart-define=ACATRAIN_AUTH_CONTINUE_URL="$ACATRAIN_AUTH_CONTINUE_URL"
+        env:
+          ACATRAIN_API_URL: ${{ vars.ACATRAIN_API_URL }}
+          FIREBASE_WEB_API_KEY: ${{ vars.FIREBASE_WEB_API_KEY }}
+          ACATRAIN_AUTH_CONTINUE_URL: ${{ vars.ACATRAIN_AUTH_CONTINUE_URL }}
+      - name: Package unsigned IPA
+        run: tool/package_ios.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: acatrain-package-ipa
+          path: dist/*.ipa
+          compression-level: 0
+          retention-days: 14
+
+  release:
+    name: Publish direct release assets
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs:
+      - worker
+      - flutter
+      - linux-packages
+      - windows-build
+      - macos-package
+      - ios-package
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: acatrain-package-*
+          path: dist
+          merge-multiple: true
+      - name: Publish package files
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 || \
+            gh release create "$GITHUB_REF_NAME" --title "Acatrain $GITHUB_REF_NAME" --generate-notes
+          gh release upload "$GITHUB_REF_NAME" dist/* --clobber
