@@ -89,13 +89,24 @@ if (requested.includes('macos')) {
 // App icons, names and launch colours. Only freshly generated runners are
 // branded unless --icons is passed, so an existing runner is never changed
 // behind your back. Re-render the icons with tool/generate_icons.py.
-const brand = process.argv.includes('--icons')
-  ? requested
-  : missing;
+const refreshIcons = process.argv.includes('--icons');
+const brand = refreshIcons ? requested : missing;
 const icons = 'packaging/icons';
+const missingBrandAssets = new Set();
 const copyIcon = (from, to) => {
-  if (!fs.existsSync(path.dirname(to))) return;
-  fs.copyFileSync(path.join(icons, from), to);
+  if (!fs.existsSync(path.dirname(to))) return false;
+  const source = path.join(icons, from);
+  if (!fs.existsSync(source)) {
+    if (refreshIcons) {
+      throw new Error(
+        `Missing branding asset: ${source}. Run python3 tool/generate_icons.py first.`,
+      );
+    }
+    missingBrandAssets.add(from);
+    return false;
+  }
+  fs.copyFileSync(source, to);
+  return true;
 };
 const patch = (file, edit) => {
   if (!fs.existsSync(file)) return;
@@ -158,6 +169,15 @@ if (brand.includes('windows')) {
 if (brand.includes('linux')) {
   patch('linux/runner/my_application.cc', text =>
     text.replace(/set_title\((\w+), "acatrain"\)/g, 'set_title($1, "Acatrain")'),
+  );
+}
+
+if (missingBrandAssets.size > 0) {
+  console.warn(
+    `Branding assets missing; kept Flutter defaults for: ${[...missingBrandAssets].join(', ')}`,
+  );
+  console.warn(
+    'Run python3 tool/generate_icons.py and commit packaging outputs to restore custom icons.',
   );
 }
 
