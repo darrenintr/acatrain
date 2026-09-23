@@ -12,6 +12,7 @@ import 'expressive.dart';
 import 'models.dart';
 import 'store.dart';
 import 'study_page.dart';
+import 'subscription.dart';
 import 'google_identity.dart';
 import 'language.dart';
 
@@ -84,15 +85,19 @@ class AcatrainApp extends StatelessWidget {
             'dark' => ThemeMode.dark,
             _ => ThemeMode.system,
           },
-          theme: _theme(Brightness.light),
-          darkTheme: _theme(Brightness.dark),
+          // A slower morph so switching plans feels like an unveiling.
+          themeAnimationDuration: const Duration(milliseconds: 900),
+          themeAnimationCurve: Curves.easeInOutCubic,
+          theme: _theme(Brightness.light, AcatrainPlan.fromId(store.plan)),
+          darkTheme: _theme(Brightness.dark, AcatrainPlan.fromId(store.plan)),
           home: HomeShell(store: store),
         ),
   );
 
-  ThemeData _theme(Brightness brightness) {
+  ThemeData _theme(Brightness brightness, AcatrainPlan plan) {
     final colors =
-        brightness == Brightness.light
+        planColorScheme(plan, brightness) ??
+        (brightness == Brightness.light
             ? const ColorScheme(
               brightness: Brightness.light,
               primary: Color(0xFF36684F),
@@ -128,9 +133,11 @@ class AcatrainApp extends StatelessWidget {
             : ColorScheme.fromSeed(
               seedColor: const Color(0xFF426B58),
               brightness: Brightness.dark,
-            );
+            ));
     final tones =
-        brightness == Brightness.light
+        plan != AcatrainPlan.free
+            ? planTones(plan, colors)
+            : brightness == Brightness.light
             ? AcatrainTones.light
             : AcatrainTones.dark(colors);
 
@@ -1165,6 +1172,31 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
                           onSelected: (_) => store.setAppearance(value),
                         ),
                     ],
+                  ),
+                ),
+              ),
+              SizedBox(
+                width: cardWidth,
+                child: _SettingsCard(
+                  icon: Icons.workspace_premium_outlined,
+                  title: tr(context, 'Subscription'),
+                  body:
+                      isCantonese(context)
+                          ? '目前方案：${AcatrainPlan.fromId(store.plan).label}（${tr(context, AcatrainPlan.fromId(store.plan).themeName)}）'
+                          : 'Current plan: ${AcatrainPlan.fromId(store.plan).label} (${AcatrainPlan.fromId(store.plan).themeName})',
+                  footer: tr(
+                    context,
+                    'Demo checkout. You will never be charged.',
+                  ),
+                  child: FilledButton.tonalIcon(
+                    onPressed:
+                        () => Navigator.of(context).push(
+                          AcatrainPageRoute<void>(
+                            builder: (_) => SubscriptionPage(store: store),
+                          ),
+                        ),
+                    icon: const Icon(Icons.auto_awesome_rounded),
+                    label: Text(tr(context, 'View plans')),
                   ),
                 ),
               ),
