@@ -1,8 +1,6 @@
-gradle-wrapper.jar
+# Gradle wrapper files are committed so native Gradle tasks work from a clean checkout.
 /.gradle
 /captures/
-/gradlew
-/gradlew.bat
 /local.properties
 GeneratedPluginRegistrant.java
 .cxx/
