@@ -4,6 +4,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_displaymode/flutter_displaymode.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'app_ui.dart';
@@ -13,6 +14,11 @@ import 'study_page.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  if (!kIsWeb &&
+      (defaultTargetPlatform == TargetPlatform.android ||
+          defaultTargetPlatform == TargetPlatform.iOS)) {
+    await GoogleSignIn.instance.initialize();
+  }
   if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
     try {
       await FlutterDisplayMode.setHighRefreshRate();
@@ -1102,6 +1108,11 @@ class _AuthSheetState extends State<_AuthSheet> {
         () => widget.store.sendPasswordReset(_email.text),
       );
 
+  Future<void> _signInGoogle() => _run(
+        widget.store.signInWithGoogle,
+        close: true,
+      );
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -1131,6 +1142,27 @@ class _AuthSheetState extends State<_AuthSheet> {
             ),
           ),
           const SizedBox(height: 22),
+          if (!kIsWeb &&
+              (defaultTargetPlatform == TargetPlatform.android ||
+                  defaultTargetPlatform == TargetPlatform.iOS)) ...[
+            OutlinedButton.icon(
+              onPressed: _submitting ? null : _signInGoogle,
+              icon: const Icon(Icons.account_circle_outlined),
+              label: const Text('Continue with Google'),
+            ),
+            const SizedBox(height: 16),
+            const Row(
+              children: [
+                Expanded(child: Divider()),
+                Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 12),
+                  child: Text('or use email'),
+                ),
+                Expanded(child: Divider()),
+              ],
+            ),
+            const SizedBox(height: 16),
+          ],
           TextField(
             controller: _email,
             enabled: !_submitting,
@@ -1278,7 +1310,7 @@ class _AuthSheetState extends State<_AuthSheet> {
             ),
           const SizedBox(height: 8),
           Text(
-            'Google, Apple and GitHub sign-in require provider-specific OAuth callback setup. The authentication layer is now structured so those providers can be added without changing progress storage.',
+            'Google sign-in is available on Android and iOS. Apple and GitHub sign-in still require provider-specific setup.',
             style: theme.textTheme.bodySmall?.copyWith(
               color: theme.colorScheme.onSurfaceVariant,
             ),
