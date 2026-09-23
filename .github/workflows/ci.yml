@@ -44,7 +44,9 @@ jobs:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: stable
           cache: true
-      - run: node tool/bootstrap.mjs --platforms=android,web
+      - name: Verify committed Android runner
+        run: test -f android/app/build.gradle.kts
+      - run: node tool/bootstrap.mjs --platforms=web
       - run: flutter pub get
       - run: dart format lib test
       - run: flutter analyze --no-fatal-infos
@@ -203,15 +205,13 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
       - uses: subosito/flutter-action@v2
         with:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: stable
           cache: true
-      - run: node tool/bootstrap.mjs --platforms=ios
+      - name: Verify committed iOS runner
+        run: test -f ios/Runner/Info.plist
       - run: flutter pub get
       - name: Build unsigned iOS release
         run: |
