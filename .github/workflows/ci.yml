@@ -204,6 +204,9 @@ jobs:
       - run: node tool/bootstrap.mjs --platforms=windows
       - run: flutter pub get
       - name: Build Windows release
+        env:
+          # Firebase C++ SDK currently declares an older CMake policy version.
+          CMAKE_POLICY_VERSION_MINIMUM: '3.5'
         run: >
           flutter build windows --release
           --dart-define=ACATRAIN_API_URL="${{ vars.ACATRAIN_API_URL }}"
