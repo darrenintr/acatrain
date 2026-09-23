@@ -473,7 +473,13 @@ class AppStore extends ChangeNotifier {
     if (!kIsWeb &&
         (defaultTargetPlatform == TargetPlatform.android ||
             defaultTargetPlatform == TargetPlatform.iOS)) {
-      unawaited(GoogleSignIn.instance.signOut());
+      try {
+        GoogleSignIn.instance.signOut().ignore();
+      } catch (_) {
+        // Unit tests and unsupported embedders may not register the native
+        // Google Sign-In implementation. The local Firebase session must
+        // still be cleared.
+      }
     }
     uid = null;
     email = null;
