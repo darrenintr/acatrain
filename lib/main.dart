@@ -15,10 +15,18 @@ import 'study_page.dart';
 import 'subscription.dart';
 import 'google_identity.dart';
 import 'language.dart';
+import 'launch_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await initializeGoogleIdentity();
+  // Preferences hold the plan, language and appearance, so the launch
+  // animation already wears the right theme.
+  final store = AppStore(await SharedPreferences.getInstance());
+  runApp(AcatrainApp(store: store, ready: _boot(store)));
+}
+
+/// Start-up work that runs behind the launch animation.
+Future<void> _boot(AppStore store) async {
   if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
     try {
       await FlutterDisplayMode.setHighRefreshRate();
@@ -27,9 +35,10 @@ Future<void> main() async {
       // available. Flutter animations continue to follow the platform vsync.
     }
   }
-  final store = AppStore(await SharedPreferences.getInstance());
+  await initializeGoogleIdentity();
   await store.load();
-  runApp(AcatrainApp(store: store));
+  // Bill renewals or end cancelled plans that fell due while closed.
+  await settleDemoSubscription(store);
   if (store.cloudConfigured) unawaited(store.syncContent());
 }
 
@@ -60,8 +69,12 @@ TextStyle _type({
 );
 
 class AcatrainApp extends StatelessWidget {
-  const AcatrainApp({super.key, required this.store});
+  const AcatrainApp({super.key, required this.store, this.ready});
   final AppStore store;
+
+  /// Start-up work to play the launch animation over. Without it the home
+  /// screen shows straight away (the store must already be loaded).
+  final Future<void>? ready;
 
   @override
   Widget build(BuildContext context) => AnimatedBuilder(
@@ -90,7 +103,13 @@ class AcatrainApp extends StatelessWidget {
           themeAnimationCurve: Curves.easeInOutCubic,
           theme: _theme(Brightness.light, AcatrainPlan.fromId(store.plan)),
           darkTheme: _theme(Brightness.dark, AcatrainPlan.fromId(store.plan)),
-          home: HomeShell(store: store),
+          home:
+              ready == null
+                  ? HomeShell(store: store)
+                  : AcatrainLaunchScreen(
+                    ready: ready,
+                    child: HomeShell(store: store),
+                  ),
         ),
   );
 
