@@ -24,3 +24,10 @@ flutter:
   uses-material-design: true
   assets:
     - assets/seed.json
+  fonts:
+    - family: Google Sans Flex
+      fonts:
+        - asset: assets/fonts/GoogleSansFlex.ttf
+    - family: Figtree
+      fonts:
+        - asset: assets/fonts/Figtree.ttf

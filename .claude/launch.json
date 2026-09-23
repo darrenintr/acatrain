@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "acatrain-web",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": ["-lc", "export PATH=\"$PATH:/run/media/darren/1TB/flutter/bin\"; flutter run -d web-server --web-port=8766 --web-hostname=localhost"],
+      "port": 8766
+    }
+  ]
+}
