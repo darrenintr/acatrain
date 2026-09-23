@@ -4,11 +4,11 @@ import 'dart:convert';
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
-import 'package:google_sign_in/google_sign_in.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'models.dart';
+import 'google_identity.dart';
 
 enum ItemStatus { missed, due, practised, new_ }
 
@@ -16,26 +16,44 @@ class AppStore extends ChangeNotifier {
   AppStore(
     this.prefs, {
     http.Client? client,
+    this.googleTokenProvider,
     this.apiUrl = const String.fromEnvironment('ACATRAIN_API_URL'),
     this.firebaseKey = const String.fromEnvironment('FIREBASE_WEB_API_KEY'),
-    this.authContinueUrl =
-        const String.fromEnvironment('ACATRAIN_AUTH_CONTINUE_URL'),
+    this.authContinueUrl = const String.fromEnvironment(
+      'ACATRAIN_AUTH_CONTINUE_URL',
+    ),
   }) : client = client ?? http.Client();
 
   final SharedPreferences prefs;
   final http.Client client;
+  final Future<String> Function()? googleTokenProvider;
   final String apiUrl, firebaseKey, authContinueUrl;
 
   ContentBundle bundle = const ContentBundle([]);
   String releaseId = 'bundled-demo';
   String status = 'Offline ready. Your progress stays on this device.';
   bool busy = false;
-  String? uid, email, _idToken, _refreshToken;
+  String? uid, email, displayName, _idToken, _refreshToken;
+  String? _pendingGoogleToken, _pendingGoogleEmail;
   DateTime? _expiresAt;
   DateTime? lastContentSync;
   Map<String, ReviewState> progress = {};
 
   bool get cloudConfigured => apiUrl.isNotEmpty;
+  String? get pendingGoogleEmail => _pendingGoogleEmail;
+  String get languageCode => prefs.getString('display-language') ?? 'en';
+  String get appearance => prefs.getString('appearance') ?? 'system';
+
+  Future<void> setLanguageCode(String value) async {
+    await prefs.setString('display-language', value);
+    notifyListeners();
+  }
+
+  Future<void> setAppearance(String value) async {
+    await prefs.setString('appearance', value);
+    notifyListeners();
+  }
+
   String get _progressKey => 'progress:${uid ?? 'guest'}';
 
   Uri _uri(String path) {
@@ -43,9 +61,7 @@ class AppStore extends ChangeNotifier {
     if (uri.scheme != 'https' &&
         !(uri.scheme == 'http' &&
             ['localhost', '127.0.0.1'].contains(uri.host))) {
-      throw const FormatException(
-        'The API must use HTTPS (except localhost)',
-      );
+      throw const FormatException('The API must use HTTPS (except localhost)');
     }
     return uri;
   }
@@ -68,10 +84,10 @@ class AppStore extends ChangeNotifier {
   }
 
   Uri _firebaseUri(String action) => Uri.https(
-        'identitytoolkit.googleapis.com',
-        '/v1/accounts:$action',
-        {'key': firebaseKey},
-      );
+    'identitytoolkit.googleapis.com',
+    '/v1/accounts:$action',
+    {'key': firebaseKey},
+  );
 
   Future<http.Response> _firebasePost(
     String action,
@@ -91,10 +107,7 @@ class AppStore extends ChangeNotifier {
         .timeout(const Duration(seconds: 20));
   }
 
-  FormatException _firebaseFailure(
-    http.Response response,
-    String fallback,
-  ) {
+  FormatException _firebaseFailure(http.Response response, String fallback) {
     String code = '';
     try {
       final body = jsonDecode(response.body) as Map<String, dynamic>;
@@ -106,15 +119,19 @@ class AppStore extends ChangeNotifier {
     final message = switch (code) {
       'INVALID_EMAIL' => 'Enter a valid email address.',
       'EMAIL_EXISTS' => 'That email address already has an account.',
+      'FEDERATED_USER_ID_ALREADY_LINKED' =>
+        'This Google account is already linked to another account.',
+      'EMAIL_EXISTS_WITH_DIFFERENT_CREDENTIAL' ||
+      'ACCOUNT_EXISTS_WITH_DIFFERENT_CREDENTIAL' =>
+        'This email already has an account. Sign in with your password to connect Google.',
       'EMAIL_NOT_FOUND' ||
       'INVALID_PASSWORD' ||
-      'INVALID_LOGIN_CREDENTIALS' =>
-        'The email or password is incorrect.',
-      'WEAK_PASSWORD' => 'Choose a stronger password with at least 6 characters.',
+      'INVALID_LOGIN_CREDENTIALS' => 'The email or password is incorrect.',
+      'WEAK_PASSWORD' =>
+        'Choose a stronger password with at least 6 characters.',
       'OPERATION_NOT_ALLOWED' =>
         'This sign-in method is not enabled in Firebase Authentication.',
-      'TOO_MANY_ATTEMPTS_TRY_LATER' =>
-        'Too many attempts. Try again later.',
+      'TOO_MANY_ATTEMPTS_TRY_LATER' => 'Too many attempts. Try again later.',
       'EXPIRED_OOB_CODE' => 'That email link has expired. Request a new one.',
       'INVALID_OOB_CODE' => 'That email link or code is invalid.',
       _ => fallback,
@@ -122,18 +139,18 @@ class AppStore extends ChangeNotifier {
     return FormatException(message);
   }
 
-  void _applySession(
-    Map<String, dynamic> data, {
-    String? fallbackEmail,
-  }) {
+  void _applySession(Map<String, dynamic> data, {String? fallbackEmail}) {
     final nextUid = data['localId']?.toString();
     final nextIdToken = data['idToken']?.toString();
     final nextRefreshToken = data['refreshToken']?.toString();
     if (nextUid == null || nextIdToken == null || nextRefreshToken == null) {
-      throw const FormatException('The authentication response was incomplete.');
+      throw const FormatException(
+        'The authentication response was incomplete.',
+      );
     }
     uid = nextUid;
     email = data['email']?.toString() ?? fallbackEmail;
+    displayName = data['displayName']?.toString();
     _idToken = nextIdToken;
     _refreshToken = nextRefreshToken;
     final seconds = int.tryParse(data['expiresIn']?.toString() ?? '') ?? 3600;
@@ -185,36 +202,35 @@ class AppStore extends ChangeNotifier {
     if (!ok) throw StateError('Local progress could not be saved');
   }
 
-  List<StudyItem> dueItems(StudySet set) => set.items.where((item) {
+  List<StudyItem> dueItems(StudySet set) => set.items
+      .where((item) {
         final state = progress[item.key(set.id)];
         return state == null || !state.dueAt.isAfter(DateTime.now());
-      }).toList(growable: false);
+      })
+      .toList(growable: false);
 
   int dueCount(StudySet set) => dueItems(set).length;
 
-  int get totalDue =>
-      bundle.sets.fold(0, (n, set) => n + dueCount(set));
+  int get totalDue => bundle.sets.fold(0, (n, set) => n + dueCount(set));
 
   int get mastered => bundle.sets.fold(
-        0,
-        (n, set) =>
-            n +
-            set.items
-                .where(
-                  (item) => (progress[item.key(set.id)]?.box ?? 0) >= 3,
-                )
-                .length,
-      );
+    0,
+    (n, set) =>
+        n +
+        set.items
+            .where((item) => (progress[item.key(set.id)]?.box ?? 0) >= 3)
+            .length,
+  );
 
   bool isWrong(StudySet set, StudyItem item) =>
       progress[item.key(set.id)]?.wrong ?? false;
 
-  int practisedCount(StudySet set) => set.items
-      .where((item) => (progress[item.key(set.id)]?.box ?? 0) >= 3)
-      .length;
+  int practisedCount(StudySet set) =>
+      set.items
+          .where((item) => (progress[item.key(set.id)]?.box ?? 0) >= 3)
+          .length;
 
-  int get totalItems =>
-      bundle.sets.fold(0, (n, set) => n + set.items.length);
+  int get totalItems => bundle.sets.fold(0, (n, set) => n + set.items.length);
 
   ItemStatus statusOf(StudySet set, StudyItem item) {
     if (isWrong(set, item)) return ItemStatus.missed;
@@ -243,9 +259,10 @@ class AppStore extends ChangeNotifier {
       await action();
       return true;
     } catch (error) {
-      status = error is FormatException
-          ? error.message
-          : 'Could not complete sync. Check your connection and configuration.';
+      status =
+          error is FormatException
+              ? error.message
+              : 'Could not complete sync. Check your connection and configuration.';
       return false;
     } finally {
       busy = false;
@@ -309,22 +326,15 @@ class AppStore extends ChangeNotifier {
       final next = ContentBundle.parse(payload);
       final saved = await prefs.setString(
         'content:v1',
-        jsonEncode({
-          'releaseId': nextId,
-          'payload': payload,
-          'sha256': hash,
-        }),
+        jsonEncode({'releaseId': nextId, 'payload': payload, 'sha256': hash}),
       );
       if (!saved) {
-        throw const FormatException(
-          'Could not save content for offline use.',
-        );
+        throw const FormatException('Could not save content for offline use.');
       }
       bundle = next;
       releaseId = nextId;
       lastContentSync = DateTime.now();
-      status =
-          'New content is ready. Existing study sessions stay unchanged.';
+      status = 'New content is ready. Existing study sessions stay unchanged.';
     });
   }
 
@@ -332,123 +342,185 @@ class AppStore extends ChangeNotifier {
     String address,
     String password, {
     bool register = false,
-  }) =>
-      _run(() async {
-        final action = register ? 'signUp' : 'signInWithPassword';
-        final response = await _firebasePost(action, {
-          'email': address.trim(),
-          'password': password,
-          'returnSecureToken': true,
-        });
-        if (response.statusCode != 200) {
-          throw _firebaseFailure(
-            response,
-            register
-                ? 'Could not create the account.'
-                : 'Could not sign in with email and password.',
-          );
-        }
-        final data = jsonDecode(response.body) as Map<String, dynamic>;
-        _applySession(data, fallbackEmail: address.trim());
-        status =
-            'Signed in. Use Sync progress to merge this account across devices.';
-      });
+  }) => _run(() async {
+    final action = register ? 'signUp' : 'signInWithPassword';
+    final response = await _firebasePost(action, {
+      'email': address.trim(),
+      'password': password,
+      'returnSecureToken': true,
+    });
+    if (response.statusCode != 200) {
+      throw _firebaseFailure(
+        response,
+        register
+            ? 'Could not create the account.'
+            : 'Could not sign in with email and password.',
+      );
+    }
+    var data = jsonDecode(response.body) as Map<String, dynamic>;
+    if (_pendingGoogleToken != null &&
+        !register &&
+        address.trim().toLowerCase() == _pendingGoogleEmail?.toLowerCase()) {
+      data = await _exchangeGoogle(
+        _pendingGoogleToken!,
+        idToken: data['idToken'] as String,
+      );
+      _pendingGoogleToken = null;
+      _pendingGoogleEmail = null;
+    } else if (_pendingGoogleToken != null) {
+      _pendingGoogleToken = null;
+      _pendingGoogleEmail = null;
+    }
+    _applySession(data, fallbackEmail: address.trim());
+    if (!register) {
+      try {
+        await prepareGoogleIdentityPassword(address.trim(), password);
+      } catch (_) {
+        // REST sign-in succeeded. Web SDK setup is only needed later if
+        // the user chooses to connect Google.
+      }
+    }
+    status =
+        'Signed in. Use Sync progress to merge this account across devices.';
+  });
+
+  Future<Map<String, dynamic>> _exchangeGoogle(
+    String googleToken, {
+    String? idToken,
+  }) async {
+    final response = await _firebasePost('signInWithIdp', {
+      'requestUri': 'http://localhost',
+      'postBody':
+          Uri(
+            queryParameters: {
+              'id_token': googleToken,
+              'providerId': 'google.com',
+            },
+          ).query,
+      if (idToken != null) 'idToken': idToken,
+      'returnIdpCredential': true,
+      'returnSecureToken': true,
+    });
+    if (response.statusCode != 200) {
+      final failure = _firebaseFailure(
+        response,
+        'Could not connect this Google account.',
+      );
+      if (failure.message == 'That email address already has an account.') {
+        throw const FormatException(
+          'This email already has an account. Sign in with its password to connect Google.',
+        );
+      }
+      throw failure;
+    }
+    return jsonDecode(response.body) as Map<String, dynamic>;
+  }
 
   Future<bool> signInWithGoogle() => _run(() async {
-        if (kIsWeb ||
-            (defaultTargetPlatform != TargetPlatform.android &&
-                defaultTargetPlatform != TargetPlatform.iOS)) {
-          throw const FormatException(
-            'Google sign-in is currently available in the Android and iOS apps.',
-          );
-        }
+    final googleToken =
+        await (googleTokenProvider?.call() ??
+            googleIdentityToken(linkExisting: uid != null));
+    String? googleEmail;
+    try {
+      final payload = googleToken.split('.')[1];
+      googleEmail =
+          (jsonDecode(
+                    utf8.decode(base64Url.decode(base64Url.normalize(payload))),
+                  )
+                  as Map)['email']
+              ?.toString();
+    } catch (_) {
+      // Firebase verifies the token; this untrusted claim is only used to
+      // match the email entered in the password confirmation flow.
+    }
+    if (uid != null) {
+      final previousUid = uid;
+      // On Web, linkWithPopup has already linked the provider in Firebase.
+      // A regular IdP sign-in now returns that same user's REST session.
+      final data = await _exchangeGoogle(
+        googleToken,
+        idToken: kIsWeb ? null : await _token(),
+      );
+      if (data['localId'] != previousUid) {
+        throw const FormatException(
+          'Google could not be linked to the current account.',
+        );
+      }
+      _applySession(data, fallbackEmail: email);
+      status =
+          'Google is connected to your account. Your progress stays with this account.';
+      return;
+    }
+    try {
+      final data = await _exchangeGoogle(googleToken);
+      if (data['needConfirmation'] == true || data['idToken'] == null) {
+        _pendingGoogleToken = googleToken;
+        _pendingGoogleEmail = data['email']?.toString();
+        throw const FormatException(
+          'This email already has an account. Sign in with its password to connect Google.',
+        );
+      }
+      _applySession(data);
+      status =
+          'Signed in with Google. Use Sync progress to merge progress across devices.';
+    } on FormatException catch (error) {
+      if (error.message.contains('already has an account') &&
+          googleEmail != null) {
+        _pendingGoogleToken = googleToken;
+        _pendingGoogleEmail = googleEmail;
+      }
+      rethrow;
+    }
+  });
 
-        GoogleSignInAccount account;
-        try {
-          account = await GoogleSignIn.instance.authenticate();
-        } on GoogleSignInException catch (error) {
-          if (error.code == GoogleSignInExceptionCode.canceled) {
-            throw const FormatException('Google sign-in was canceled.');
-          }
-          throw const FormatException(
-            'Google sign-in could not be completed. Check the app OAuth configuration.',
-          );
-        }
-
-        final googleIdToken = account.authentication.idToken;
-        if (googleIdToken == null || googleIdToken.isEmpty) {
-          throw const FormatException(
-            'Google did not return an ID token for this app.',
-          );
-        }
-        if (firebaseKey.isEmpty) {
-          throw const FormatException(
-            'Set FIREBASE_WEB_API_KEY to enable account sign in.',
-          );
-        }
-
-        final response = await client
-            .post(
-              _firebaseUri('signInWithIdp'),
-              headers: {'Content-Type': 'application/json'},
-              body: jsonEncode({
-                'requestUri': 'http://localhost',
-                'postBody': Uri(
-                  queryParameters: {
-                    'id_token': googleIdToken,
-                    'providerId': 'google.com',
-                  },
-                ).query,
-                'returnIdpCredential': true,
-                'returnSecureToken': true,
-              }),
-            )
-            .timeout(const Duration(seconds: 20));
-
-        if (response.statusCode != 200) {
-          throw _firebaseFailure(
-            response,
-            'Could not sign in with Google.',
-          );
-        }
-
-        final data = jsonDecode(response.body) as Map<String, dynamic>;
-        _applySession(data, fallbackEmail: account.email);
-        status =
-            'Signed in with Google. Use Sync progress to merge progress across devices.';
-      });
+  Future<bool> updateDisplayName(String name) => _run(() async {
+    final trimmed = name.trim();
+    if (trimmed.isEmpty || trimmed.length > 80) {
+      throw const FormatException('Choose a name between 1 and 80 characters.');
+    }
+    final response = await _firebasePost('update', {
+      'idToken': await _token(),
+      'displayName': trimmed,
+      'returnSecureToken': true,
+    });
+    if (response.statusCode != 200) {
+      throw _firebaseFailure(response, 'Could not save your name.');
+    }
+    displayName = trimmed;
+    status = 'Personal info saved.';
+  });
 
   Future<bool> sendPasswordReset(String address) => _run(() async {
-        final response = await _firebasePost('sendOobCode', {
-          'requestType': 'PASSWORD_RESET',
-          'email': address.trim(),
-        });
-        if (response.statusCode != 200) {
-          throw _firebaseFailure(
-            response,
-            'Could not send the password reset email.',
-          );
-        }
-        status = 'Password reset email sent. Check your inbox.';
-      });
+    final response = await _firebasePost('sendOobCode', {
+      'requestType': 'PASSWORD_RESET',
+      'email': address.trim(),
+    });
+    if (response.statusCode != 200) {
+      throw _firebaseFailure(
+        response,
+        'Could not send the password reset email.',
+      );
+    }
+    status = 'Password reset email sent. Check your inbox.';
+  });
 
   Future<bool> sendEmailSignInLink(String address) => _run(() async {
-        final continueUri = _authContinueUri();
-        final response = await _firebasePost('sendOobCode', {
-          'requestType': 'EMAIL_SIGNIN',
-          'email': address.trim(),
-          'continueUrl': continueUri.toString(),
-          'canHandleCodeInApp': true,
-        });
-        if (response.statusCode != 200) {
-          throw _firebaseFailure(
-            response,
-            'Could not send the passwordless sign-in link.',
-          );
-        }
-        status =
-            'Sign-in link sent. Open it on Web, or paste the full link/code into Acatrain on another platform.';
-      });
+    final continueUri = _authContinueUri();
+    final response = await _firebasePost('sendOobCode', {
+      'requestType': 'EMAIL_SIGNIN',
+      'email': address.trim(),
+      'continueUrl': continueUri.toString(),
+      'canHandleCodeInApp': true,
+    });
+    if (response.statusCode != 200) {
+      throw _firebaseFailure(
+        response,
+        'Could not send the passwordless sign-in link.',
+      );
+    }
+    status =
+        'Sign-in link sent. Open it on Web, or paste the full link/code into Acatrain on another platform.';
+  });
 
   String _extractEmailLinkCode(String input) {
     final raw = input.trim();
@@ -467,39 +539,34 @@ class AppStore extends ChangeNotifier {
     return raw;
   }
 
-  Future<bool> signInWithEmailLink(String address, String linkOrCode) =>
-      _run(() async {
-        final response = await _firebasePost('signInWithEmailLink', {
-          'email': address.trim(),
-          'oobCode': _extractEmailLinkCode(linkOrCode),
-        });
-        if (response.statusCode != 200) {
-          throw _firebaseFailure(
-            response,
-            'Could not complete passwordless sign in.',
-          );
-        }
-        final data = jsonDecode(response.body) as Map<String, dynamic>;
-        _applySession(data, fallbackEmail: address.trim());
-        status =
-            'Signed in with an email link. Use Sync progress to merge progress across devices.';
-      });
+  Future<bool> signInWithEmailLink(
+    String address,
+    String linkOrCode,
+  ) => _run(() async {
+    final response = await _firebasePost('signInWithEmailLink', {
+      'email': address.trim(),
+      'oobCode': _extractEmailLinkCode(linkOrCode),
+    });
+    if (response.statusCode != 200) {
+      throw _firebaseFailure(
+        response,
+        'Could not complete passwordless sign in.',
+      );
+    }
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    _applySession(data, fallbackEmail: address.trim());
+    status =
+        'Signed in with an email link. Use Sync progress to merge progress across devices.';
+  });
 
   void signOut() {
     if (busy) return;
-    if (!kIsWeb &&
-        (defaultTargetPlatform == TargetPlatform.android ||
-            defaultTargetPlatform == TargetPlatform.iOS)) {
-      try {
-        GoogleSignIn.instance.signOut().ignore();
-      } catch (_) {
-        // Unit tests and unsupported embedders may not register the native
-        // Google Sign-In implementation. The local Firebase session must
-        // still be cleared.
-      }
-    }
+    signOutGoogleIdentity().ignore();
     uid = null;
     email = null;
+    displayName = null;
+    _pendingGoogleToken = null;
+    _pendingGoogleEmail = null;
     _idToken = null;
     _refreshToken = null;
     _expiresAt = null;
@@ -520,11 +587,9 @@ class AppStore extends ChangeNotifier {
     }
     final response = await client
         .post(
-          Uri.https(
-            'securetoken.googleapis.com',
-            '/v1/token',
-            {'key': firebaseKey},
-          ),
+          Uri.https('securetoken.googleapis.com', '/v1/token', {
+            'key': firebaseKey,
+          }),
           body: {
             'grant_type': 'refresh_token',
             'refresh_token': _refreshToken!,
@@ -538,9 +603,7 @@ class AppStore extends ChangeNotifier {
     }
     final data = jsonDecode(response.body) as Map<String, dynamic>;
     if (data['user_id'] != uid) {
-      throw const FormatException(
-        'Session identity mismatch. Sign in again.',
-      );
+      throw const FormatException('Session identity mismatch. Sign in again.');
     }
     _idToken = data['id_token'];
     _refreshToken = data['refresh_token'];
@@ -571,10 +634,7 @@ class AppStore extends ChangeNotifier {
           );
         }
         final remote = jsonDecode(response.body) as Map<String, dynamic>;
-        final merged = mergeProgress(
-          progress,
-          decodeProgress(remote['items']),
-        );
+        final merged = mergeProgress(progress, decodeProgress(remote['items']));
         final upload = await client
             .post(
               _uri('/v1/progress'),

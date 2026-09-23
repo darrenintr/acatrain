@@ -145,6 +145,27 @@ jobs:
           npm test --prefix backend/worker
           node tool/check-content.mjs
 
+      - name: Resolve Firebase Web config
+        run: |
+          curl --fail --silent --show-error --retry 3 \
+            "https://${FIREBASE_PROJECT_ID}.web.app/__/firebase/init.json" \
+            > "$RUNNER_TEMP/firebase-web-config.json"
+          node <<'NODE'
+          const fs = require('node:fs');
+          const config = JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP + '/firebase-web-config.json', 'utf8'));
+          if (config.projectId !== process.env.FIREBASE_PROJECT_ID ||
+              config.apiKey !== process.env.FIREBASE_WEB_API_KEY ||
+              !config.appId || !config.messagingSenderId) {
+            console.error('::error::Firebase Web configuration does not match this project');
+            process.exit(1);
+          }
+          for (const [name, value] of Object.entries({
+            FIREBASE_WEB_APP_ID: config.appId,
+            FIREBASE_MESSAGING_SENDER_ID: config.messagingSenderId,
+            FIREBASE_AUTH_DOMAIN: config.authDomain,
+          })) fs.appendFileSync(process.env.GITHUB_ENV, `${name}=${value}\n`);
+          NODE
+
       - name: Prepare Flutter web
         run: |
           node tool/bootstrap.mjs --platforms=web
@@ -152,6 +173,10 @@ jobs:
           flutter build web --release \
             --dart-define=ACATRAIN_API_URL="$ACATRAIN_API_URL" \
             --dart-define=FIREBASE_WEB_API_KEY="$FIREBASE_WEB_API_KEY" \
+            --dart-define=FIREBASE_WEB_APP_ID="$FIREBASE_WEB_APP_ID" \
+            --dart-define=FIREBASE_PROJECT_ID="$FIREBASE_PROJECT_ID" \
+            --dart-define=FIREBASE_MESSAGING_SENDER_ID="$FIREBASE_MESSAGING_SENDER_ID" \
+            --dart-define=FIREBASE_AUTH_DOMAIN="$FIREBASE_AUTH_DOMAIN" \
             --dart-define=ACATRAIN_AUTH_CONTINUE_URL="https://${FIREBASE_PROJECT_ID}.web.app"
 
       - name: Deploy Cloudflare Worker with secrets

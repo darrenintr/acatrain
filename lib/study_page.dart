@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'language.dart';
 
 import 'app_ui.dart';
 import 'expressive.dart';
@@ -14,11 +15,7 @@ String _displayMath(String text) {
 }
 
 class SetPage extends StatelessWidget {
-  const SetPage({
-    super.key,
-    required this.set,
-    required this.store,
-  });
+  const SetPage({super.key, required this.set, required this.store});
 
   final StudySet set;
   final AppStore store;
@@ -27,12 +24,8 @@ class SetPage extends StatelessWidget {
     Navigator.push(
       context,
       AcatrainPageRoute<void>(
-        builder: (_) => StudyPage(
-          set: set,
-          items: items,
-          quiz: quiz,
-          store: store,
-        ),
+        builder:
+            (_) => StudyPage(set: set, items: items, quiz: quiz, store: store),
       ),
     );
   }
@@ -92,7 +85,9 @@ class SetPage extends StatelessWidget {
                 children: [
                   Expanded(
                     child: Text(
-                      '$practised of ${set.items.length} well-practised',
+                      isCantonese(context)
+                          ? '$practised / ${set.items.length} 題已熟習'
+                          : '$practised of ${set.items.length} well-practised',
                       overflow: TextOverflow.ellipsis,
                       style: theme.textTheme.bodyMedium?.copyWith(
                         fontWeight: acatrainWeight(650),
@@ -101,7 +96,9 @@ class SetPage extends StatelessWidget {
                     ),
                   ),
                   Text(
-                    '${due.length} due',
+                    isCantonese(context)
+                        ? '${due.length} 題待溫習'
+                        : '${due.length} due',
                     style: theme.textTheme.bodyMedium?.copyWith(
                       fontSize: 13,
                       color: theme.colorScheme.onSurfaceVariant,
@@ -113,13 +110,17 @@ class SetPage extends StatelessWidget {
               WavyProgress(
                 value: progress,
                 color: style.fill,
-                semanticsLabel: '$practised of ${set.items.length} well-practised',
+                semanticsLabel:
+                    '$practised of ${set.items.length} well-practised',
               ),
               const SizedBox(height: 24),
               _ModeTile.primary(
                 icon: Icons.style_rounded,
-                title: 'Flashcards',
-                detail: 'Recall all ${set.items.length} items',
+                title: tr(context, 'Flashcards'),
+                detail:
+                    isCantonese(context)
+                        ? '重溫全部 ${set.items.length} 題'
+                        : 'Recall all ${set.items.length} items',
                 onTap: () => _start(context, set.items, false),
               ),
               const SizedBox(height: 8),
@@ -127,29 +128,41 @@ class SetPage extends StatelessWidget {
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                  Expanded(
-                    child: _ModeTile(
-                      icon: Icons.quiz_rounded,
-                      title: 'Practice test',
-                      detail: '${quizzes.length} questions',
-                      background: theme.colorScheme.tertiaryContainer,
-                      foreground: theme.colorScheme.onTertiaryContainer,
-                      primary: false,
-                      onTap: quizzes.isEmpty ? null : () => _start(context, quizzes, true),
+                    Expanded(
+                      child: _ModeTile(
+                        icon: Icons.quiz_rounded,
+                        title: tr(context, 'Practice test'),
+                        detail:
+                            isCantonese(context)
+                                ? '${quizzes.length} 條問題'
+                                : '${quizzes.length} questions',
+                        background: theme.colorScheme.tertiaryContainer,
+                        foreground: theme.colorScheme.onTertiaryContainer,
+                        primary: false,
+                        onTap:
+                            quizzes.isEmpty
+                                ? null
+                                : () => _start(context, quizzes, true),
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: _ModeTile(
-                      icon: Icons.history_rounded,
-                      title: 'Review due',
-                      detail: '${due.length} items ready now',
-                      background: theme.colorScheme.secondaryContainer,
-                      foreground: theme.colorScheme.onSecondaryContainer,
-                      primary: false,
-                      onTap: due.isEmpty ? null : () => _start(context, due, false),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: _ModeTile(
+                        icon: Icons.history_rounded,
+                        title: tr(context, 'Review due'),
+                        detail:
+                            isCantonese(context)
+                                ? '${due.length} 題可以溫習'
+                                : '${due.length} items ready now',
+                        background: theme.colorScheme.secondaryContainer,
+                        foreground: theme.colorScheme.onSecondaryContainer,
+                        primary: false,
+                        onTap:
+                            due.isEmpty
+                                ? null
+                                : () => _start(context, due, false),
+                      ),
                     ),
-                  ),
                   ],
                 ),
               ),
@@ -159,10 +172,15 @@ class SetPage extends StatelessWidget {
                 textBaseline: TextBaseline.alphabetic,
                 children: [
                   Expanded(
-                    child: Text('Inside this set', style: theme.textTheme.titleLarge),
+                    child: Text(
+                      tr(context, 'Inside this set'),
+                      style: theme.textTheme.titleLarge,
+                    ),
                   ),
                   Text(
-                    '${set.items.length} items',
+                    isCantonese(context)
+                        ? '${set.items.length} 題'
+                        : '${set.items.length} items',
                     style: theme.textTheme.bodyMedium?.copyWith(
                       fontWeight: acatrainWeight(550),
                       color: theme.colorScheme.onSurfaceVariant,
@@ -173,11 +191,18 @@ class SetPage extends StatelessWidget {
               const SizedBox(height: 12),
               for (var i = 0; i < set.items.length; i++)
                 Padding(
-                  padding: EdgeInsets.only(bottom: i == set.items.length - 1 ? 0 : 2),
+                  padding: EdgeInsets.only(
+                    bottom: i == set.items.length - 1 ? 0 : 2,
+                  ),
                   child: _SetItemRow(
                     item: set.items[i],
                     status: store.statusOf(set, set.items[i]),
-                    radius: segmentRadius(i, set.items.length, outer: AcatrainRadii.lPlus, inner: AcatrainRadii.xs),
+                    radius: segmentRadius(
+                      i,
+                      set.items.length,
+                      outer: AcatrainRadii.lPlus,
+                      inner: AcatrainRadii.xs,
+                    ),
                   ),
                 ),
               const SizedBox(height: 12),
@@ -205,9 +230,9 @@ class _ModeTile extends StatelessWidget {
     required this.title,
     required this.detail,
     required this.onTap,
-  })  : background = null,
-        foreground = null,
-        primary = true;
+  }) : background = null,
+       foreground = null,
+       primary = true;
 
   final IconData icon;
   final String title;
@@ -221,62 +246,92 @@ class _ModeTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final enabled = onTap != null;
-    final bg = primary
-        ? theme.colorScheme.primary
-        : (background ?? theme.colorScheme.surfaceContainerLow);
-    final fg = primary
-        ? theme.colorScheme.onPrimary
-        : (foreground ?? theme.colorScheme.onSurface);
+    final bg =
+        primary
+            ? theme.colorScheme.primary
+            : (background ?? theme.colorScheme.surfaceContainerLow);
+    final fg =
+        primary
+            ? theme.colorScheme.onPrimary
+            : (foreground ?? theme.colorScheme.onSurface);
     final opacity = enabled ? 1.0 : 0.38;
 
     final badge = ExpressiveBadge(
       shape: ExpressiveShape.sunny,
       size: primary ? 56 : 40,
-      color: primary
-          ? theme.colorScheme.primaryContainer
-          : fg.withValues(alpha: 0.16),
-      child: Icon(icon, color: primary ? theme.colorScheme.onPrimaryContainer : fg, size: primary ? 28 : 22),
+      color:
+          primary
+              ? theme.colorScheme.primaryContainer
+              : fg.withValues(alpha: 0.16),
+      child: Icon(
+        icon,
+        color: primary ? theme.colorScheme.onPrimaryContainer : fg,
+        size: primary ? 28 : 22,
+      ),
     );
 
-    final content = primary
-        ? Row(
-            children: [
-              badge,
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
+    final content =
+        primary
+            ? Row(
+              children: [
+                badge,
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: theme.textTheme.titleLarge?.copyWith(color: fg),
+                      ),
+                      Text(
+                        detail,
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: fg.withValues(alpha: 0.85),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Icon(Icons.arrow_forward_rounded, color: fg),
+              ],
+            )
+            : Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                badge,
+                Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text(title, style: theme.textTheme.titleLarge?.copyWith(color: fg)),
-                    Text(detail, style: theme.textTheme.bodyMedium?.copyWith(color: fg.withValues(alpha: 0.85))),
+                    Text(
+                      title,
+                      style: theme.textTheme.titleMedium?.copyWith(
+                        color: fg,
+                        fontSize: 17,
+                      ),
+                    ),
+                    Text(
+                      detail,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: fg,
+                        fontSize: 13,
+                      ),
+                    ),
                   ],
                 ),
-              ),
-              Icon(Icons.arrow_forward_rounded, color: fg),
-            ],
-          )
-        : Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              badge,
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(title, style: theme.textTheme.titleMedium?.copyWith(color: fg, fontSize: 17)),
-                  Text(detail, style: theme.textTheme.bodySmall?.copyWith(color: fg, fontSize: 13)),
-                ],
-              ),
-            ],
-          );
+              ],
+            );
 
     return Opacity(
       opacity: opacity,
       child: Material(
         color: bg,
-        borderRadius: BorderRadius.circular(primary ? AcatrainRadii.xl : AcatrainRadii.l),
+        borderRadius: BorderRadius.circular(
+          primary ? AcatrainRadii.xl : AcatrainRadii.l,
+        ),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
           onTap: onTap,
@@ -292,7 +347,11 @@ class _ModeTile extends StatelessWidget {
 }
 
 class _SetItemRow extends StatelessWidget {
-  const _SetItemRow({required this.item, required this.status, required this.radius});
+  const _SetItemRow({
+    required this.item,
+    required this.status,
+    required this.radius,
+  });
   final StudyItem item;
   final ItemStatus status;
   final BorderRadius radius;
@@ -318,11 +377,17 @@ class _SetItemRow extends StatelessWidget {
                   item.prompt,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.bodyLarge?.copyWith(fontSize: 15, height: 21 / 15, fontWeight: acatrainWeight(550)),
+                  style: theme.textTheme.bodyLarge?.copyWith(
+                    fontSize: 15,
+                    height: 21 / 15,
+                    fontWeight: acatrainWeight(550),
+                  ),
                 ),
                 Text(
-                  item.isQuiz ? 'Multiple choice' : 'Flashcard',
-                  style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                  tr(context, item.isQuiz ? 'Multiple choice' : 'Flashcard'),
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
                 ),
               ],
             ),
@@ -343,19 +408,44 @@ class _StatusPill extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     final (label, bg, fg) = switch (status) {
-      ItemStatus.missed => ('Missed', colors.errorContainer, colors.onErrorContainer),
-      ItemStatus.due => ('Due', colors.tertiaryContainer, colors.onTertiaryContainer),
-      ItemStatus.practised => ('Practised', colors.primaryContainer, colors.onPrimaryContainer),
-      ItemStatus.new_ => ('New', colors.surfaceContainerHigh, colors.onSurfaceVariant),
+      ItemStatus.missed => (
+        'Missed',
+        colors.errorContainer,
+        colors.onErrorContainer,
+      ),
+      ItemStatus.due => (
+        'Due',
+        colors.tertiaryContainer,
+        colors.onTertiaryContainer,
+      ),
+      ItemStatus.practised => (
+        'Practised',
+        colors.primaryContainer,
+        colors.onPrimaryContainer,
+      ),
+      ItemStatus.new_ => (
+        'New',
+        colors.surfaceContainerHigh,
+        colors.onSurfaceVariant,
+      ),
     };
     return Container(
       height: 24,
       padding: const EdgeInsets.symmetric(horizontal: 9),
-      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(AcatrainRadii.s)),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(AcatrainRadii.s),
+      ),
       alignment: Alignment.center,
       child: Text(
-        label,
-        style: TextStyle(fontSize: 11, height: 16 / 11, fontWeight: FontWeight.w700, letterSpacing: 0.4, color: fg),
+        tr(context, label),
+        style: TextStyle(
+          fontSize: 11,
+          height: 16 / 11,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 0.4,
+          color: fg,
+        ),
       ),
     );
   }
@@ -439,7 +529,10 @@ class _StudyPageState extends State<StudyPage> {
               children: [
                 _SessionHeader(
                   finished: finished,
-                  mode: widget.quiz ? 'Practice test' : 'Flashcards',
+                  mode: tr(
+                    context,
+                    widget.quiz ? 'Practice test' : 'Flashcards',
+                  ),
                   setTitle: widget.set.title,
                   index: _index,
                   total: _items.length,
@@ -452,13 +545,14 @@ class _StudyPageState extends State<StudyPage> {
                         duration: acatrainMediumMotion,
                         switchInCurve: Curves.easeOutCubic,
                         switchOutCurve: Curves.easeInCubic,
-                        layoutBuilder: (currentChild, previousChildren) => Stack(
-                          alignment: Alignment.topCenter,
-                          children: [
-                            ...previousChildren,
-                            if (currentChild != null) currentChild,
-                          ],
-                        ),
+                        layoutBuilder:
+                            (currentChild, previousChildren) => Stack(
+                              alignment: Alignment.topCenter,
+                              children: [
+                                ...previousChildren,
+                                if (currentChild != null) currentChild,
+                              ],
+                            ),
                         transitionBuilder: (child, animation) {
                           final slide = Tween<Offset>(
                             begin: const Offset(0.035, 0),
@@ -466,45 +560,63 @@ class _StudyPageState extends State<StudyPage> {
                           ).animate(animation);
                           return FadeTransition(
                             opacity: animation,
-                            child: SlideTransition(position: slide, child: child),
+                            child: SlideTransition(
+                              position: slide,
+                              child: child,
+                            ),
                           );
                         },
-                        child: finished
-                            ? _FinishedSession(
-                                key: const ValueKey('finished'),
-                                set: widget.set,
-                                store: widget.store,
-                                correct: _correct,
-                                total: _items.length,
-                                quiz: widget.quiz,
-                                missed: _missed.length,
-                                onDone: () => Navigator.pop(context),
-                                onRetry: _missed.isEmpty ? null : _retryMissed,
-                              )
-                            : KeyedSubtree(
-                                key: ValueKey('item-$_index'),
-                                child: widget.quiz
-                                    ? _QuizCard(
-                                        item: _items[_index],
-                                        questionNumber: _index + 1,
-                                        selected: _selected,
-                                        saving: _saving,
-                                        onSelect: (value) => setState(() => _selected = value),
-                                        onContinue: () => _advance(
-                                          _selected == _items[_index].correctIndex,
-                                        ),
-                                      )
-                                    : _Flashcard(
-                                        item: _items[_index],
-                                        revealed: _revealed,
-                                        saving: _saving,
-                                        compact: compact,
-                                        onReveal: () => setState(() => _revealed = true),
-                                        onToggle: () => setState(() => _revealed = !_revealed),
-                                        onAgain: () => _advance(false),
-                                        onGotIt: () => _advance(true),
-                                      ),
-                              ),
+                        child:
+                            finished
+                                ? _FinishedSession(
+                                  key: const ValueKey('finished'),
+                                  set: widget.set,
+                                  store: widget.store,
+                                  correct: _correct,
+                                  total: _items.length,
+                                  quiz: widget.quiz,
+                                  missed: _missed.length,
+                                  onDone: () => Navigator.pop(context),
+                                  onRetry:
+                                      _missed.isEmpty ? null : _retryMissed,
+                                )
+                                : KeyedSubtree(
+                                  key: ValueKey('item-$_index'),
+                                  child:
+                                      widget.quiz
+                                          ? _QuizCard(
+                                            item: _items[_index],
+                                            questionNumber: _index + 1,
+                                            selected: _selected,
+                                            saving: _saving,
+                                            onSelect:
+                                                (value) => setState(
+                                                  () => _selected = value,
+                                                ),
+                                            onContinue:
+                                                () => _advance(
+                                                  _selected ==
+                                                      _items[_index]
+                                                          .correctIndex,
+                                                ),
+                                          )
+                                          : _Flashcard(
+                                            item: _items[_index],
+                                            revealed: _revealed,
+                                            saving: _saving,
+                                            compact: compact,
+                                            onReveal:
+                                                () => setState(
+                                                  () => _revealed = true,
+                                                ),
+                                            onToggle:
+                                                () => setState(
+                                                  () => _revealed = !_revealed,
+                                                ),
+                                            onAgain: () => _advance(false),
+                                            onGotIt: () => _advance(true),
+                                          ),
+                                ),
                       ),
                       const SizedBox(height: 100),
                     ],
@@ -545,7 +657,7 @@ class _SessionHeader extends StatelessWidget {
           child: Row(
             children: [
               IconButton(
-                tooltip: finished ? 'Close' : 'End session',
+                tooltip: tr(context, finished ? 'Close' : 'End session'),
                 onPressed: () => Navigator.pop(context),
                 icon: const Icon(Icons.close_rounded),
               ),
@@ -555,12 +667,21 @@ class _SessionHeader extends StatelessWidget {
                     mainAxisAlignment: MainAxisAlignment.center,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(mode, style: theme.textTheme.titleMedium?.copyWith(fontSize: 16, height: 22 / 16, fontWeight: FontWeight.w700)),
+                      Text(
+                        mode,
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          fontSize: 16,
+                          height: 22 / 16,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
                       Text(
                         setTitle,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
                       ),
                     ],
                   ),
@@ -598,7 +719,10 @@ class _SessionHeader extends StatelessWidget {
                       ),
                       TextSpan(
                         text: ' / $total',
-                        style: TextStyle(fontWeight: acatrainWeight(550), color: theme.colorScheme.onSurfaceVariant),
+                        style: TextStyle(
+                          fontWeight: acatrainWeight(550),
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
                       ),
                     ],
                   ),
@@ -612,7 +736,12 @@ class _SessionHeader extends StatelessWidget {
 }
 
 class _Chip extends StatelessWidget {
-  const _Chip({required this.icon, required this.label, required this.background, required this.foreground});
+  const _Chip({
+    required this.icon,
+    required this.label,
+    required this.background,
+    required this.foreground,
+  });
   final IconData icon;
   final String label;
   final Color background;
@@ -620,21 +749,29 @@ class _Chip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Container(
-        height: 28,
-        padding: const EdgeInsets.fromLTRB(8, 0, 12, 0),
-        decoration: BoxDecoration(color: background, borderRadius: BorderRadius.circular(AcatrainRadii.l)),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 16, color: foreground),
-            const SizedBox(width: 6),
-            Text(
-              label,
-              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, letterSpacing: 0.4, color: foreground),
-            ),
-          ],
+    height: 28,
+    padding: const EdgeInsets.fromLTRB(8, 0, 12, 0),
+    decoration: BoxDecoration(
+      color: background,
+      borderRadius: BorderRadius.circular(AcatrainRadii.l),
+    ),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 16, color: foreground),
+        const SizedBox(width: 6),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 0.4,
+            color: foreground,
+          ),
         ),
-      );
+      ],
+    ),
+  );
 }
 
 class _Flashcard extends StatelessWidget {
@@ -669,7 +806,12 @@ class _Flashcard extends StatelessWidget {
       children: [
         Semantics(
           button: true,
-          label: revealed ? 'Answer shown. Tap to flip back.' : 'Tap to reveal answer',
+          label: tr(
+            context,
+            revealed
+                ? 'Answer shown. Tap to flip back.'
+                : 'Tap to reveal answer',
+          ),
           child: Material(
             color: colors.surfaceContainerLowest,
             borderRadius: BorderRadius.circular(AcatrainRadii.xlPlus),
@@ -696,7 +838,7 @@ class _Flashcard extends StatelessWidget {
                           children: [
                             _Chip(
                               icon: Icons.help_rounded,
-                              label: 'Question',
+                              label: tr(context, 'Question'),
                               background: colors.surfaceContainerHigh,
                               foreground: colors.onSurfaceVariant,
                             ),
@@ -722,39 +864,51 @@ class _Flashcard extends StatelessWidget {
                           child: AcatrainSpringIn(
                             disabled: reduceMotion,
                             spring: AcatrainSprings.spatialDefault,
-                            builder: (context, t) => Opacity(
-                              opacity: t.clamp(0.0, 1.0),
-                              child: Container(
-                                margin: const EdgeInsets.fromLTRB(0, 0, 0, 0),
-                                padding: const EdgeInsets.fromLTRB(18, 20, 18, 22),
-                                decoration: BoxDecoration(
-                                  color: colors.primaryContainer,
-                                  borderRadius: BorderRadius.circular(26),
-                                ),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    _Chip(
-                                      icon: Icons.lightbulb_rounded,
-                                      label: 'Answer',
-                                      background: tones.heroAccent,
-                                      foreground: colors.onPrimaryContainer,
+                            builder:
+                                (context, t) => Opacity(
+                                  opacity: t.clamp(0.0, 1.0),
+                                  child: Container(
+                                    margin: const EdgeInsets.fromLTRB(
+                                      0,
+                                      0,
+                                      0,
+                                      0,
                                     ),
-                                    const SizedBox(height: 12),
-                                    Text(
-                                      item.answerText,
-                                      style: TextStyle(
-                                        fontSize: 18,
-                                        height: 27 / 18,
-                                        fontWeight: FontWeight.w500,
-                                        color: colors.onPrimaryContainer,
-                                      ),
+                                    padding: const EdgeInsets.fromLTRB(
+                                      18,
+                                      20,
+                                      18,
+                                      22,
                                     ),
-                                  ],
+                                    decoration: BoxDecoration(
+                                      color: colors.primaryContainer,
+                                      borderRadius: BorderRadius.circular(26),
+                                    ),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        _Chip(
+                                          icon: Icons.lightbulb_rounded,
+                                          label: tr(context, 'Answer'),
+                                          background: tones.heroAccent,
+                                          foreground: colors.onPrimaryContainer,
+                                        ),
+                                        const SizedBox(height: 12),
+                                        Text(
+                                          item.answerText,
+                                          style: TextStyle(
+                                            fontSize: 18,
+                                            height: 27 / 18,
+                                            fontWeight: FontWeight.w500,
+                                            color: colors.onPrimaryContainer,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
                                 ),
-                              ),
-                            ),
                           ),
                         ),
                     ],
@@ -766,75 +920,85 @@ class _Flashcard extends StatelessWidget {
         ),
         const SizedBox(height: 14),
         Text(
-          revealed ? 'Tap the card to flip it back' : 'Tap card to reveal the answer',
-          style: theme.textTheme.bodySmall?.copyWith(color: colors.onSurfaceVariant),
+          tr(
+            context,
+            revealed
+                ? 'Tap the card to flip it back'
+                : 'Tap card to reveal the answer',
+          ),
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: colors.onSurfaceVariant,
+          ),
         ),
         const SizedBox(height: 24),
         AnimatedSwitcher(
           duration: acatrainFastMotion,
-          child: revealed
-              ? Column(
-                  key: const ValueKey('rating'),
-                  children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: SizedBox(
-                            height: 64,
-                            child: FilledButton.icon(
-                              onPressed: saving ? null : onAgain,
-                              style: FilledButton.styleFrom(
-                                backgroundColor: colors.secondaryContainer,
-                                foregroundColor: colors.onSecondaryContainer,
-                                shape: const RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.horizontal(
-                                    left: Radius.circular(32),
-                                    right: Radius.circular(10),
+          child:
+              revealed
+                  ? Column(
+                    key: const ValueKey('rating'),
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: SizedBox(
+                              height: 64,
+                              child: FilledButton.icon(
+                                onPressed: saving ? null : onAgain,
+                                style: FilledButton.styleFrom(
+                                  backgroundColor: colors.secondaryContainer,
+                                  foregroundColor: colors.onSecondaryContainer,
+                                  shape: const RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.horizontal(
+                                      left: Radius.circular(32),
+                                      right: Radius.circular(10),
+                                    ),
                                   ),
                                 ),
+                                icon: const Icon(Icons.replay_rounded),
+                                label: Text(tr(context, 'Again')),
                               ),
-                              icon: const Icon(Icons.replay_rounded),
-                              label: const Text('Again'),
                             ),
                           ),
-                        ),
-                        const SizedBox(width: 4),
-                        Expanded(
-                          child: SizedBox(
-                            height: 64,
-                            child: FilledButton.icon(
-                              onPressed: saving ? null : onGotIt,
-                              style: FilledButton.styleFrom(
-                                shape: const RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.horizontal(
-                                    left: Radius.circular(10),
-                                    right: Radius.circular(32),
+                          const SizedBox(width: 4),
+                          Expanded(
+                            child: SizedBox(
+                              height: 64,
+                              child: FilledButton.icon(
+                                onPressed: saving ? null : onGotIt,
+                                style: FilledButton.styleFrom(
+                                  shape: const RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.horizontal(
+                                      left: Radius.circular(10),
+                                      right: Radius.circular(32),
+                                    ),
                                   ),
                                 ),
+                                icon: const Icon(Icons.check_rounded),
+                                label: Text(tr(context, 'Got it')),
                               ),
-                              icon: const Icon(Icons.check_rounded),
-                              label: const Text('Got it'),
                             ),
                           ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        tr(context, 'Progress is saved on this device.'),
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: colors.onSurfaceVariant,
                         ),
-                      ],
+                      ),
+                    ],
+                  )
+                  : SizedBox(
+                    key: const ValueKey('reveal'),
+                    width: double.infinity,
+                    height: 64,
+                    child: FilledButton(
+                      onPressed: saving ? null : onReveal,
+                      child: Text(tr(context, 'Show answer')),
                     ),
-                    const SizedBox(height: 12),
-                    Text(
-                      'Progress is saved on this device.',
-                      style: theme.textTheme.bodySmall?.copyWith(color: colors.onSurfaceVariant),
-                    ),
-                  ],
-                )
-              : SizedBox(
-                  key: const ValueKey('reveal'),
-                  width: double.infinity,
-                  height: 64,
-                  child: FilledButton(
-                    onPressed: saving ? null : onReveal,
-                    child: const Text('Show answer'),
                   ),
-                ),
         ),
       ],
     );
@@ -868,7 +1032,9 @@ class _QuizCard extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Text(
-          'QUESTION $questionNumber',
+          isCantonese(context)
+              ? '第 $questionNumber 題'
+              : 'QUESTION $questionNumber',
           style: TextStyle(
             fontSize: 13,
             height: 18 / 13,
@@ -893,18 +1059,28 @@ class _QuizCard extends StatelessWidget {
         const SizedBox(height: 22),
         for (var i = 0; i < item.choices.length; i++)
           Padding(
-            padding: EdgeInsets.only(bottom: i == item.choices.length - 1 ? 0 : 3),
+            padding: EdgeInsets.only(
+              bottom: i == item.choices.length - 1 ? 0 : 3,
+            ),
             child: _ChoiceRow(
               letter: _letters[i],
               text: _displayMath(item.choices[i]),
-              state: selected == null
-                  ? (i == selected ? _ChoiceState.selecting : _ChoiceState.idle)
-                  : i == item.correctIndex
+              state:
+                  selected == null
+                      ? (i == selected
+                          ? _ChoiceState.selecting
+                          : _ChoiceState.idle)
+                      : i == item.correctIndex
                       ? _ChoiceState.correct
                       : i == selected
-                          ? _ChoiceState.wrong
-                          : _ChoiceState.idle,
-              radius: segmentRadius(i, item.choices.length, outer: AcatrainRadii.xl, inner: AcatrainRadii.s),
+                      ? _ChoiceState.wrong
+                      : _ChoiceState.idle,
+              radius: segmentRadius(
+                i,
+                item.choices.length,
+                outer: AcatrainRadii.xl,
+                inner: AcatrainRadii.s,
+              ),
               onTap: selected != null || saving ? null : () => onSelect(i),
             ),
           ),
@@ -923,7 +1099,11 @@ class _QuizCard extends StatelessWidget {
                   shape: ExpressiveShape.sunny,
                   size: 36,
                   color: colors.tertiary,
-                  child: Icon(Icons.lightbulb_rounded, size: 20, color: colors.onTertiary),
+                  child: Icon(
+                    Icons.lightbulb_rounded,
+                    size: 20,
+                    color: colors.onTertiary,
+                  ),
                 ),
                 const SizedBox(width: 14),
                 Expanded(
@@ -931,7 +1111,7 @@ class _QuizCard extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Why',
+                        tr(context, 'Why'),
                         style: theme.textTheme.bodyLarge?.copyWith(
                           fontWeight: FontWeight.w700,
                           fontSize: 15,
@@ -960,10 +1140,10 @@ class _QuizCard extends StatelessWidget {
               onPressed: saving ? null : onContinue,
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
-                children: const [
-                  Text('Continue'),
-                  SizedBox(width: 8),
-                  Icon(Icons.arrow_forward_rounded),
+                children: [
+                  Text(tr(context, 'Continue')),
+                  const SizedBox(width: 8),
+                  const Icon(Icons.arrow_forward_rounded),
                 ],
               ),
             ),
@@ -996,8 +1176,14 @@ class _ChoiceRow extends StatelessWidget {
     final colors = Theme.of(context).colorScheme;
     final (background, foreground) = switch (state) {
       _ChoiceState.idle => (colors.surfaceContainerLow, colors.onSurface),
-      _ChoiceState.selecting => (colors.secondaryContainer, colors.onSecondaryContainer),
-      _ChoiceState.correct => (colors.primaryContainer, colors.onPrimaryContainer),
+      _ChoiceState.selecting => (
+        colors.secondaryContainer,
+        colors.onSecondaryContainer,
+      ),
+      _ChoiceState.correct => (
+        colors.primaryContainer,
+        colors.onPrimaryContainer,
+      ),
       _ChoiceState.wrong => (colors.errorContainer, colors.onErrorContainer),
     };
 
@@ -1014,7 +1200,10 @@ class _ChoiceRow extends StatelessWidget {
         badge = Container(
           width: 36,
           height: 36,
-          decoration: BoxDecoration(color: colors.error, borderRadius: BorderRadius.circular(AcatrainRadii.m)),
+          decoration: BoxDecoration(
+            color: colors.error,
+            borderRadius: BorderRadius.circular(AcatrainRadii.m),
+          ),
           alignment: Alignment.center,
           child: Icon(Icons.close_rounded, size: 20, color: colors.onError),
         );
@@ -1022,23 +1211,43 @@ class _ChoiceRow extends StatelessWidget {
         badge = Container(
           width: 36,
           height: 36,
-          decoration: BoxDecoration(color: colors.secondary, shape: BoxShape.circle),
+          decoration: BoxDecoration(
+            color: colors.secondary,
+            shape: BoxShape.circle,
+          ),
           alignment: Alignment.center,
-          child: Text(letter, style: TextStyle(color: colors.onSecondary, fontWeight: FontWeight.w700, fontSize: 14)),
+          child: Text(
+            letter,
+            style: TextStyle(
+              color: colors.onSecondary,
+              fontWeight: FontWeight.w700,
+              fontSize: 14,
+            ),
+          ),
         );
       case _ChoiceState.idle:
         badge = Container(
           width: 36,
           height: 36,
-          decoration: BoxDecoration(color: colors.surfaceContainerHigh, shape: BoxShape.circle),
+          decoration: BoxDecoration(
+            color: colors.surfaceContainerHigh,
+            shape: BoxShape.circle,
+          ),
           alignment: Alignment.center,
-          child: Text(letter, style: TextStyle(color: colors.onSurfaceVariant, fontWeight: FontWeight.w700, fontSize: 14)),
+          child: Text(
+            letter,
+            style: TextStyle(
+              color: colors.onSurfaceVariant,
+              fontWeight: FontWeight.w700,
+              fontSize: 14,
+            ),
+          ),
         );
     }
 
     final trailing = switch (state) {
-      _ChoiceState.correct => 'Correct answer',
-      _ChoiceState.wrong => 'Your answer',
+      _ChoiceState.correct => tr(context, 'Correct answer'),
+      _ChoiceState.wrong => tr(context, 'Your answer'),
       _ => null,
     };
 
@@ -1070,7 +1279,12 @@ class _ChoiceRow extends StatelessWidget {
               if (trailing != null)
                 Text(
                   trailing,
-                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, letterSpacing: 0.3, color: foreground),
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.3,
+                    color: foreground,
+                  ),
                 ),
             ],
           ),
@@ -1108,10 +1322,15 @@ class _FinishedSession extends StatelessWidget {
     final colors = theme.colorScheme;
     final reduceMotion = MediaQuery.of(context).disableAnimations;
     final practised = store.practisedCount(set);
-    final resultLabel = quiz ? 'correct' : 'recalled';
-    final summary = missed == 0
-        ? 'Nice work on ${set.title}. Nothing needs another look yet.'
-        : 'Nice work on ${set.title}. ${missed == 1 ? '1 item is' : '$missed items are'} back in your review queue.';
+    final resultLabel = tr(context, quiz ? 'correct' : 'recalled');
+    final summary =
+        missed == 0
+            ? (isCantonese(context)
+                ? '${set.title} 做得好！暫時冇題目需要再溫習。'
+                : 'Nice work on ${set.title}. Nothing needs another look yet.')
+            : (isCantonese(context)
+                ? '${set.title} 做得好！$missed 題已加入溫習清單。'
+                : 'Nice work on ${set.title}. ${missed == 1 ? '1 item is' : '$missed items are'} back in your review queue.');
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 24),
@@ -1121,143 +1340,184 @@ class _FinishedSession extends StatelessWidget {
             disabled: reduceMotion,
             spring: AcatrainSprings.spatialSlow,
             begin: 0.6,
-            builder: (context, scale) => Transform.scale(
-              scale: scale,
-              child: SizedBox(
-                width: 232,
-                height: 232,
-                child: Stack(
-                  alignment: Alignment.center,
-                  children: [
-                    ExpressiveBadge(shape: ExpressiveShape.cookie12, size: 232, color: colors.primaryContainer),
-                    ExpressiveBadge(
-                      shape: ExpressiveShape.cookie9,
-                      size: 176,
-                      color: colors.primary,
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text.rich(
-                            TextSpan(
-                              children: [
+            builder:
+                (context, scale) => Transform.scale(
+                  scale: scale,
+                  child: SizedBox(
+                    width: 232,
+                    height: 232,
+                    child: Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        ExpressiveBadge(
+                          shape: ExpressiveShape.cookie12,
+                          size: 232,
+                          color: colors.primaryContainer,
+                        ),
+                        ExpressiveBadge(
+                          shape: ExpressiveShape.cookie9,
+                          size: 176,
+                          color: colors.primary,
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text.rich(
                                 TextSpan(
-                                  text: '$correct',
-                                  style: TextStyle(
-                                    fontFamily: 'Google Sans Flex',
-                                    fontFamilyFallback: const ['Figtree'],
-                                    fontSize: 60,
-                                    height: 1,
-                                    fontWeight: FontWeight.w800,
-                                    letterSpacing: -2,
-                                    color: colors.onPrimary,
-                                    fontFeatures: const [FontFeature.tabularFigures()],
-                                  ),
+                                  children: [
+                                    TextSpan(
+                                      text: '$correct',
+                                      style: TextStyle(
+                                        fontFamily: 'Google Sans Flex',
+                                        fontFamilyFallback: const ['Figtree'],
+                                        fontSize: 60,
+                                        height: 1,
+                                        fontWeight: FontWeight.w800,
+                                        letterSpacing: -2,
+                                        color: colors.onPrimary,
+                                        fontFeatures: const [
+                                          FontFeature.tabularFigures(),
+                                        ],
+                                      ),
+                                    ),
+                                    TextSpan(
+                                      text: '/$total',
+                                      style: TextStyle(
+                                        fontFamily: 'Google Sans Flex',
+                                        fontFamilyFallback: const ['Figtree'],
+                                        fontSize: 32,
+                                        fontWeight: FontWeight.w800,
+                                        color: colors.inversePrimary,
+                                        fontFeatures: const [
+                                          FontFeature.tabularFigures(),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
                                 ),
-                                TextSpan(
-                                  text: '/$total',
-                                  style: TextStyle(
-                                    fontFamily: 'Google Sans Flex',
-                                    fontFamilyFallback: const ['Figtree'],
-                                    fontSize: 32,
-                                    fontWeight: FontWeight.w800,
-                                    color: colors.inversePrimary,
-                                    fontFeatures: const [FontFeature.tabularFigures()],
-                                  ),
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                resultLabel,
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: acatrainWeight(650),
+                                  letterSpacing: 0.4,
+                                  color: colors.onPrimary,
                                 ),
-                              ],
-                            ),
+                              ),
+                            ],
                           ),
-                          const SizedBox(height: 6),
-                          Text(
-                            resultLabel,
-                            style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: acatrainWeight(650),
-                              letterSpacing: 0.4,
-                              color: colors.onPrimary,
-                            ),
-                          ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
-                  ],
+                  ),
                 ),
-              ),
-            ),
           ),
           const SizedBox(height: 28),
           AcatrainSpringIn(
             disabled: reduceMotion,
             spring: AcatrainSprings.effectsDefault,
-            builder: (context, opacity) => Opacity(
-              opacity: opacity.clamp(0.0, 1.0),
-              child: Column(
-                children: [
-                  Text(
-                    'Session complete',
-                    textAlign: TextAlign.center,
-                    style: theme.textTheme.headlineLarge,
-                  ),
-                  const SizedBox(height: 10),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                    child: Text(
-                      summary,
-                      textAlign: TextAlign.center,
-                      style: theme.textTheme.bodyLarge?.copyWith(color: colors.onSurfaceVariant),
-                    ),
-                  ),
-                  const SizedBox(height: 28),
-                  Row(
+            builder:
+                (context, opacity) => Opacity(
+                  opacity: opacity.clamp(0.0, 1.0),
+                  child: Column(
                     children: [
-                      for (final (i, stat) in [
-                        ('$correct', 'got it'),
-                        ('$missed', 'to revisit'),
-                        ('$practised', 'now practised'),
-                      ].indexed)
-                        Expanded(
-                          child: Padding(
-                            padding: EdgeInsets.only(left: i == 0 ? 0 : 3, right: i == 2 ? 0 : 3),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
-                              decoration: BoxDecoration(
-                                color: colors.surfaceContainerLow,
-                                borderRadius: segmentRadius(i, 3, outer: AcatrainRadii.lPlus, inner: 6),
+                      Text(
+                        tr(context, 'Session complete'),
+                        textAlign: TextAlign.center,
+                        style: theme.textTheme.headlineLarge,
+                      ),
+                      const SizedBox(height: 10),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        child: Text(
+                          summary,
+                          textAlign: TextAlign.center,
+                          style: theme.textTheme.bodyLarge?.copyWith(
+                            color: colors.onSurfaceVariant,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 28),
+                      Row(
+                        children: [
+                          for (final (i, stat)
+                              in [
+                                ('$correct', tr(context, 'got it')),
+                                ('$missed', tr(context, 'to revisit')),
+                                ('$practised', tr(context, 'now practised')),
+                              ].indexed)
+                            Expanded(
+                              child: Padding(
+                                padding: EdgeInsets.only(
+                                  left: i == 0 ? 0 : 3,
+                                  right: i == 2 ? 0 : 3,
+                                ),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 14,
+                                    horizontal: 8,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: colors.surfaceContainerLow,
+                                    borderRadius: segmentRadius(
+                                      i,
+                                      3,
+                                      outer: AcatrainRadii.lPlus,
+                                      inner: 6,
+                                    ),
+                                  ),
+                                  child: Column(
+                                    children: [
+                                      Text(
+                                        stat.$1,
+                                        style: theme.textTheme.titleLarge
+                                            ?.copyWith(
+                                              fontSize: 22,
+                                              fontWeight: acatrainWeight(750),
+                                            ),
+                                      ),
+                                      Text(
+                                        stat.$2,
+                                        style: theme.textTheme.bodySmall
+                                            ?.copyWith(
+                                              color: colors.onSurfaceVariant,
+                                            ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
                               ),
-                              child: Column(
-                                children: [
-                                  Text(stat.$1, style: theme.textTheme.titleLarge?.copyWith(fontSize: 22, fontWeight: acatrainWeight(750))),
-                                  Text(stat.$2, style: theme.textTheme.bodySmall?.copyWith(color: colors.onSurfaceVariant)),
-                                ],
-                              ),
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 28),
+                      if (onRetry != null)
+                        SizedBox(
+                          width: double.infinity,
+                          height: 64,
+                          child: FilledButton.icon(
+                            onPressed: onRetry,
+                            icon: const Icon(Icons.replay_rounded),
+                            label: Text(
+                              isCantonese(context)
+                                  ? '練習 $missed 題錯題'
+                                  : 'Practise $missed missed item${missed == 1 ? '' : 's'}',
                             ),
                           ),
                         ),
+                      if (onRetry != null) const SizedBox(height: 8),
+                      SizedBox(
+                        width: double.infinity,
+                        height: 56,
+                        child: TextButton(
+                          onPressed: onDone,
+                          child: Text(tr(context, 'Back to learning')),
+                        ),
+                      ),
                     ],
                   ),
-                  const SizedBox(height: 28),
-                  if (onRetry != null)
-                    SizedBox(
-                      width: double.infinity,
-                      height: 64,
-                      child: FilledButton.icon(
-                        onPressed: onRetry,
-                        icon: const Icon(Icons.replay_rounded),
-                        label: Text('Practise $missed missed item${missed == 1 ? '' : 's'}'),
-                      ),
-                    ),
-                  if (onRetry != null) const SizedBox(height: 8),
-                  SizedBox(
-                    width: double.infinity,
-                    height: 56,
-                    child: TextButton(
-                      onPressed: onDone,
-                      child: const Text('Back to learning'),
-                    ),
-                  ),
-                ],
-              ),
-            ),
+                ),
           ),
         ],
       ),

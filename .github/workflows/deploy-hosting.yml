@@ -1,0 +1,105 @@
+name: Deploy Web Hosting
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: acatrain-production-deploy
+  cancel-in-progress: false
+
+jobs:
+  hosting:
+    name: Build and publish web app
+    if: github.event_name == 'workflow_dispatch' || !contains(github.event.head_commit.message, '[deploy]')
+    runs-on: ubuntu-latest
+    env:
+      FIREBASE_PROJECT_ID: ${{ vars.FIREBASE_PROJECT_ID || 'acatrain-d2429' }}
+      ACATRAIN_API_URL: ${{ vars.ACATRAIN_API_URL || 'https://acatrain-api.darrenintr.workers.dev' }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.44.0'
+          channel: stable
+          cache: true
+
+      - name: Resolve public Firebase Web config
+        run: |
+          set -eu
+          curl --fail --silent --show-error --retry 3 \
+            "https://${FIREBASE_PROJECT_ID}.web.app/__/firebase/init.json" \
+            > "$RUNNER_TEMP/firebase-web-config.json"
+          node <<'NODE'
+          const fs = require('node:fs');
+          const config = JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP + '/firebase-web-config.json', 'utf8'));
+          if (config.projectId !== process.env.FIREBASE_PROJECT_ID ||
+              !config.apiKey || !config.appId || !config.messagingSenderId || !config.authDomain) {
+            console.error('::error::Firebase Web configuration is incomplete or belongs to another project');
+            process.exit(1);
+          }
+          for (const [name, value] of Object.entries({
+            FIREBASE_WEB_API_KEY: config.apiKey,
+            FIREBASE_WEB_APP_ID: config.appId,
+            FIREBASE_MESSAGING_SENDER_ID: config.messagingSenderId,
+            FIREBASE_AUTH_DOMAIN: config.authDomain,
+          })) fs.appendFileSync(process.env.GITHUB_ENV, `${name}=${value}\n`);
+          NODE
+
+      - name: Build Flutter web
+        run: |
+          set -eu
+          node tool/bootstrap.mjs --platforms=web
+          flutter pub get
+          flutter build web --release \
+            --dart-define=ACATRAIN_API_URL="$ACATRAIN_API_URL" \
+            --dart-define=FIREBASE_WEB_API_KEY="$FIREBASE_WEB_API_KEY" \
+            --dart-define=FIREBASE_WEB_APP_ID="$FIREBASE_WEB_APP_ID" \
+            --dart-define=FIREBASE_PROJECT_ID="$FIREBASE_PROJECT_ID" \
+            --dart-define=FIREBASE_MESSAGING_SENDER_ID="$FIREBASE_MESSAGING_SENDER_ID" \
+            --dart-define=FIREBASE_AUTH_DOMAIN="$FIREBASE_AUTH_DOMAIN" \
+            --dart-define=ACATRAIN_AUTH_CONTINUE_URL="https://${FIREBASE_PROJECT_ID}.web.app"
+          node <<'NODE'
+          const fs = require('node:fs');
+          const pubspec = fs.readFileSync('pubspec.yaml', 'utf8');
+          const version = pubspec.match(/^version:\s*(.+)$/m)?.[1];
+          if (!version) throw new Error('Missing app version in pubspec.yaml');
+          fs.writeFileSync('build/web/release.json', JSON.stringify({
+            commit: process.env.GITHUB_SHA,
+            version,
+          }));
+          NODE
+
+      - name: Authenticate Firebase deployment
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.FIREBASE_DEPLOY_SERVICE_ACCOUNT }}
+
+      - name: Deploy Firebase Hosting
+        run: npx -y firebase-tools@latest deploy --project "$FIREBASE_PROJECT_ID" --only hosting --non-interactive
+
+      - name: Verify live release
+        run: |
+          set -eu
+          curl --fail --silent --show-error --retry 5 --retry-delay 2 \
+            "https://${FIREBASE_PROJECT_ID}.web.app/release.json" \
+            > "$RUNNER_TEMP/live-release.json"
+          node <<'NODE'
+          const fs = require('node:fs');
+          const release = JSON.parse(fs.readFileSync(process.env.RUNNER_TEMP + '/live-release.json', 'utf8'));
+          if (release.commit !== process.env.GITHUB_SHA) {
+            console.error(`::error::Live Hosting serves ${release.commit}, expected ${process.env.GITHUB_SHA}`);
+            process.exit(1);
+          }
+          console.log(`Verified live web release ${release.version} (${release.commit})`);
+          NODE

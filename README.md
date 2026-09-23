@@ -7,12 +7,12 @@ An offline-first Flutter study app with Firebase-backed content and a Cloudflare
 - Adaptive Material 3 home for phone, tablet and desktop, shared-element study-set transitions, searchable subject library, flashcards, multiple-choice tests, explanations and mistake practice.
 - A simple five-box review schedule (not FSRS), local progress, light/dark themes, 19 original practice items across economics, mathematics and English.
 - Complete content-release downloads, SHA-256 checks, compatibility validation, last-known-good cache and session snapshots. Updating a published study set does not require an APK update.
-- Firebase Authentication over REST with email/password, account creation, password reset and passwordless email-link sign-in, also usable from Linux/Windows without native FlutterFire dependencies. Guest and account progress are isolated; account sessions remain in memory only.
+- Firebase Authentication over REST with email/password, account creation, password reset and passwordless email-link sign-in. Google sign-in is available on Android, iOS, Web, Linux, macOS and Windows with platform OAuth configuration. When an email already has a password account, sign in with that password and connect Google from Personal info; both methods then use the same account and progress. Guest and account progress are isolated; account sessions remain in memory only.
 - Manual cloud progress merge with per-item last-write-wins and optimistic concurrency retry. No automatic uploads of guest progress.
 - MCP draft editing, validation, atomic publishing, immutable releases and rollback, with separate editor/publisher credentials.
 - High-refresh motion: Android requests the highest available display mode; iOS runners enable ProMotion; Web/desktop animations follow system vsync. CI validates every platform and packages APK, DEB, RPM, AppImage, Flatpak, DMG and unsigned IPA installers.
 
-The initial UI is English. Study content is Unicode and can be Traditional Chinese; full UI localisation, rich media, LaTeX rendering and a visual authoring screen are not implemented yet.
+The display language can be switched between English and Cantonese (Traditional Chinese) in Settings. Study content retains its original language.
 
 ## Run locally (no cloud account required)
 
@@ -150,15 +150,17 @@ The second command creates a fresh reviewed-file draft and publishes it. To publ
 
 ### 4. Connect the app and host Web
 
-Copy `config.example.json` to ignored `app-config.json`, then fill in the Worker URL, Firebase Web API key and `ACATRAIN_AUTH_CONTINUE_URL` (an authorized HTTPS Firebase Hosting page used by passwordless email-link sign-in).
+Copy `config.example.json` to ignored `app-config.json`, then fill in the Worker URL, Firebase Web API key and `ACATRAIN_AUTH_CONTINUE_URL` (an authorized HTTPS Firebase Hosting page used by passwordless email-link sign-in). For Google sign-in on Web, also set the Firebase Web app ID, project ID and messaging sender ID, enable Google in Firebase Authentication, and authorize the Web origin. For Linux, macOS and Windows, create a Google Desktop OAuth client with loopback redirect support and set `GOOGLE_DESKTOP_CLIENT_ID`. Android and iOS use their native Google configuration files. Set the matching GitHub Actions variables for release builds.
 
 ```sh
 flutter run -d chrome --web-port 8080 --dart-define-from-file=app-config.json
 flutter build web --release --dart-define-from-file=app-config.json
-npx firebase-tools deploy --project YOUR_PROJECT_ID --only hosting
+npx -y firebase-tools@latest deploy --project YOUR_PROJECT_ID --only hosting
 ```
 
-Set the repository **Actions variables** `ACATRAIN_API_URL` and `FIREBASE_WEB_API_KEY` before running CI for cloud-connected Web/APK artifacts. Without them, those builds intentionally run the offline demo. Desktop CI artifacts are also offline demos. APK artifacts are **debug-signed**, not Play Store releases. CI itself does not deploy infrastructure; the separate Deploy Cloud workflow runs manually or for a `[deploy]` commit on `main`.
+Pushing to `main` runs the native/Web CI build and publishes the same commit to Firebase Hosting. The Hosting workflow reads the project's public Web configuration from Firebase, builds with the configured Worker URL, and verifies the live `release.json` commit. Commits marked `[deploy]` use the full cloud deployment workflow instead.
+
+Set the repository **Actions variables** `ACATRAIN_API_URL`, `FIREBASE_WEB_API_KEY`, `FIREBASE_WEB_APP_ID`, `FIREBASE_MESSAGING_SENDER_ID`, and `FIREBASE_PROJECT_ID` for cloud-connected CI package builds. Set `GOOGLE_DESKTOP_CLIENT_ID` for Google login in desktop packages. The Hosting workflow can resolve its public Firebase Web settings and uses the current production Worker address if `ACATRAIN_API_URL` is absent. It requires the `FIREBASE_DEPLOY_SERVICE_ACCOUNT` secret. APK artifacts are **debug-signed**, not Play Store releases. The full Deploy Cloud workflow runs manually or for a `[deploy]` commit on `main`.
 
 ## Content workflow
 

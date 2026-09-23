@@ -78,22 +78,38 @@ jobs:
           flutter build web --release \
             --dart-define=ACATRAIN_API_URL="$ACATRAIN_API_URL" \
             --dart-define=FIREBASE_WEB_API_KEY="$FIREBASE_WEB_API_KEY" \
+            --dart-define=FIREBASE_WEB_APP_ID="$FIREBASE_WEB_APP_ID" \
+            --dart-define=FIREBASE_PROJECT_ID="$FIREBASE_PROJECT_ID" \
+            --dart-define=FIREBASE_MESSAGING_SENDER_ID="$FIREBASE_MESSAGING_SENDER_ID" \
+            --dart-define=GOOGLE_DESKTOP_CLIENT_ID="$GOOGLE_DESKTOP_CLIENT_ID" \
             --dart-define=ACATRAIN_AUTH_CONTINUE_URL="$ACATRAIN_AUTH_CONTINUE_URL"
         env:
           ACATRAIN_API_URL: ${{ vars.ACATRAIN_API_URL }}
           FIREBASE_WEB_API_KEY: ${{ vars.FIREBASE_WEB_API_KEY }}
+          FIREBASE_WEB_APP_ID: ${{ vars.FIREBASE_WEB_APP_ID }}
+          FIREBASE_PROJECT_ID: ${{ vars.FIREBASE_PROJECT_ID }}
+          FIREBASE_MESSAGING_SENDER_ID: ${{ vars.FIREBASE_MESSAGING_SENDER_ID }}
+          GOOGLE_DESKTOP_CLIENT_ID: ${{ vars.GOOGLE_DESKTOP_CLIENT_ID }}
           ACATRAIN_AUTH_CONTINUE_URL: ${{ vars.ACATRAIN_AUTH_CONTINUE_URL }}
       - name: Build Android release APK
         run: |
           flutter build apk --release \
             --dart-define=ACATRAIN_API_URL="$ACATRAIN_API_URL" \
             --dart-define=FIREBASE_WEB_API_KEY="$FIREBASE_WEB_API_KEY" \
+            --dart-define=FIREBASE_WEB_APP_ID="$FIREBASE_WEB_APP_ID" \
+            --dart-define=FIREBASE_PROJECT_ID="$FIREBASE_PROJECT_ID" \
+            --dart-define=FIREBASE_MESSAGING_SENDER_ID="$FIREBASE_MESSAGING_SENDER_ID" \
+            --dart-define=GOOGLE_DESKTOP_CLIENT_ID="$GOOGLE_DESKTOP_CLIENT_ID" \
             --dart-define=ACATRAIN_AUTH_CONTINUE_URL="$ACATRAIN_AUTH_CONTINUE_URL"
           mkdir -p dist
           cp build/app/outputs/flutter-apk/app-release.apk "dist/acatrain-${ACATRAIN_VERSION}-android.apk"
         env:
           ACATRAIN_API_URL: ${{ vars.ACATRAIN_API_URL }}
           FIREBASE_WEB_API_KEY: ${{ vars.FIREBASE_WEB_API_KEY }}
+          FIREBASE_WEB_APP_ID: ${{ vars.FIREBASE_WEB_APP_ID }}
+          FIREBASE_PROJECT_ID: ${{ vars.FIREBASE_PROJECT_ID }}
+          FIREBASE_MESSAGING_SENDER_ID: ${{ vars.FIREBASE_MESSAGING_SENDER_ID }}
+          GOOGLE_DESKTOP_CLIENT_ID: ${{ vars.GOOGLE_DESKTOP_CLIENT_ID }}
           ACATRAIN_AUTH_CONTINUE_URL: ${{ vars.ACATRAIN_AUTH_CONTINUE_URL }}
       - uses: actions/upload-artifact@v4
         with:
@@ -132,10 +148,18 @@ jobs:
           flutter build linux --release \
             --dart-define=ACATRAIN_API_URL="$ACATRAIN_API_URL" \
             --dart-define=FIREBASE_WEB_API_KEY="$FIREBASE_WEB_API_KEY" \
+            --dart-define=FIREBASE_WEB_APP_ID="$FIREBASE_WEB_APP_ID" \
+            --dart-define=FIREBASE_PROJECT_ID="$FIREBASE_PROJECT_ID" \
+            --dart-define=FIREBASE_MESSAGING_SENDER_ID="$FIREBASE_MESSAGING_SENDER_ID" \
+            --dart-define=GOOGLE_DESKTOP_CLIENT_ID="$GOOGLE_DESKTOP_CLIENT_ID" \
             --dart-define=ACATRAIN_AUTH_CONTINUE_URL="$ACATRAIN_AUTH_CONTINUE_URL"
         env:
           ACATRAIN_API_URL: ${{ vars.ACATRAIN_API_URL }}
           FIREBASE_WEB_API_KEY: ${{ vars.FIREBASE_WEB_API_KEY }}
+          FIREBASE_WEB_APP_ID: ${{ vars.FIREBASE_WEB_APP_ID }}
+          FIREBASE_PROJECT_ID: ${{ vars.FIREBASE_PROJECT_ID }}
+          FIREBASE_MESSAGING_SENDER_ID: ${{ vars.FIREBASE_MESSAGING_SENDER_ID }}
+          GOOGLE_DESKTOP_CLIENT_ID: ${{ vars.GOOGLE_DESKTOP_CLIENT_ID }}
           ACATRAIN_AUTH_CONTINUE_URL: ${{ vars.ACATRAIN_AUTH_CONTINUE_URL }}
       - name: Package Linux installers
         run: tool/package_linux.sh
@@ -184,6 +208,10 @@ jobs:
           flutter build windows --release
           --dart-define=ACATRAIN_API_URL="${{ vars.ACATRAIN_API_URL }}"
           --dart-define=FIREBASE_WEB_API_KEY="${{ vars.FIREBASE_WEB_API_KEY }}"
+          --dart-define=FIREBASE_WEB_APP_ID="${{ vars.FIREBASE_WEB_APP_ID }}"
+          --dart-define=FIREBASE_PROJECT_ID="${{ vars.FIREBASE_PROJECT_ID }}"
+          --dart-define=FIREBASE_MESSAGING_SENDER_ID="${{ vars.FIREBASE_MESSAGING_SENDER_ID }}"
+          --dart-define=GOOGLE_DESKTOP_CLIENT_ID="${{ vars.GOOGLE_DESKTOP_CLIENT_ID }}"
           --dart-define=ACATRAIN_AUTH_CONTINUE_URL="${{ vars.ACATRAIN_AUTH_CONTINUE_URL }}"
 
   macos-package:
@@ -206,10 +234,18 @@ jobs:
           flutter build macos --release \
             --dart-define=ACATRAIN_API_URL="$ACATRAIN_API_URL" \
             --dart-define=FIREBASE_WEB_API_KEY="$FIREBASE_WEB_API_KEY" \
+            --dart-define=FIREBASE_WEB_APP_ID="$FIREBASE_WEB_APP_ID" \
+            --dart-define=FIREBASE_PROJECT_ID="$FIREBASE_PROJECT_ID" \
+            --dart-define=FIREBASE_MESSAGING_SENDER_ID="$FIREBASE_MESSAGING_SENDER_ID" \
+            --dart-define=GOOGLE_DESKTOP_CLIENT_ID="$GOOGLE_DESKTOP_CLIENT_ID" \
             --dart-define=ACATRAIN_AUTH_CONTINUE_URL="$ACATRAIN_AUTH_CONTINUE_URL"
         env:
           ACATRAIN_API_URL: ${{ vars.ACATRAIN_API_URL }}
           FIREBASE_WEB_API_KEY: ${{ vars.FIREBASE_WEB_API_KEY }}
+          FIREBASE_WEB_APP_ID: ${{ vars.FIREBASE_WEB_APP_ID }}
+          FIREBASE_PROJECT_ID: ${{ vars.FIREBASE_PROJECT_ID }}
+          FIREBASE_MESSAGING_SENDER_ID: ${{ vars.FIREBASE_MESSAGING_SENDER_ID }}
+          GOOGLE_DESKTOP_CLIENT_ID: ${{ vars.GOOGLE_DESKTOP_CLIENT_ID }}
           ACATRAIN_AUTH_CONTINUE_URL: ${{ vars.ACATRAIN_AUTH_CONTINUE_URL }}
       - name: Package DMG
         run: tool/package_macos.sh
@@ -238,10 +274,18 @@ jobs:
           flutter build ios --release --no-codesign \
             --dart-define=ACATRAIN_API_URL="$ACATRAIN_API_URL" \
             --dart-define=FIREBASE_WEB_API_KEY="$FIREBASE_WEB_API_KEY" \
+            --dart-define=FIREBASE_WEB_APP_ID="$FIREBASE_WEB_APP_ID" \
+            --dart-define=FIREBASE_PROJECT_ID="$FIREBASE_PROJECT_ID" \
+            --dart-define=FIREBASE_MESSAGING_SENDER_ID="$FIREBASE_MESSAGING_SENDER_ID" \
+            --dart-define=GOOGLE_DESKTOP_CLIENT_ID="$GOOGLE_DESKTOP_CLIENT_ID" \
             --dart-define=ACATRAIN_AUTH_CONTINUE_URL="$ACATRAIN_AUTH_CONTINUE_URL"
         env:
           ACATRAIN_API_URL: ${{ vars.ACATRAIN_API_URL }}
           FIREBASE_WEB_API_KEY: ${{ vars.FIREBASE_WEB_API_KEY }}
+          FIREBASE_WEB_APP_ID: ${{ vars.FIREBASE_WEB_APP_ID }}
+          FIREBASE_PROJECT_ID: ${{ vars.FIREBASE_PROJECT_ID }}
+          FIREBASE_MESSAGING_SENDER_ID: ${{ vars.FIREBASE_MESSAGING_SENDER_ID }}
+          GOOGLE_DESKTOP_CLIENT_ID: ${{ vars.GOOGLE_DESKTOP_CLIENT_ID }}
           ACATRAIN_AUTH_CONTINUE_URL: ${{ vars.ACATRAIN_AUTH_CONTINUE_URL }}
       - name: Package unsigned IPA
         run: tool/package_ios.sh

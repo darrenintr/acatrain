@@ -3,8 +3,8 @@ import 'dart:async';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_displaymode/flutter_displaymode.dart';
-import 'package:google_sign_in/google_sign_in.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'app_ui.dart';
@@ -12,14 +12,12 @@ import 'expressive.dart';
 import 'models.dart';
 import 'store.dart';
 import 'study_page.dart';
+import 'google_identity.dart';
+import 'language.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  if (!kIsWeb &&
-      (defaultTargetPlatform == TargetPlatform.android ||
-          defaultTargetPlatform == TargetPlatform.iOS)) {
-    await GoogleSignIn.instance.initialize();
-  }
+  await initializeGoogleIdentity();
   if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
     try {
       await FlutterDisplayMode.setHighRefreshRate();
@@ -39,8 +37,9 @@ const _fontFallback = ['Figtree'];
 
 FontWeight _nearestWeight(double weight) {
   final steps = [100, 200, 300, 400, 500, 600, 700, 800, 900];
-  final nearest =
-      steps.reduce((a, b) => (weight - a).abs() < (weight - b).abs() ? a : b);
+  final nearest = steps.reduce(
+    (a, b) => (weight - a).abs() < (weight - b).abs() ? a : b,
+  );
   return FontWeight.values[(nearest ~/ 100) - 1];
 }
 
@@ -49,80 +48,124 @@ TextStyle _type({
   required double height,
   required double weight,
   double letterSpacing = 0,
-}) =>
-    TextStyle(
-      fontFamily: _fontFamily,
-      fontFamilyFallback: _fontFallback,
-      fontSize: size,
-      height: height / size,
-      fontWeight: _nearestWeight(weight),
-      fontVariations: [FontVariation('wght', weight)],
-      letterSpacing: letterSpacing,
-    );
+}) => TextStyle(
+  fontFamily: _fontFamily,
+  fontFamilyFallback: _fontFallback,
+  fontSize: size,
+  height: height / size,
+  fontWeight: _nearestWeight(weight),
+  fontVariations: [FontVariation('wght', weight)],
+  letterSpacing: letterSpacing,
+);
 
 class AcatrainApp extends StatelessWidget {
   const AcatrainApp({super.key, required this.store});
   final AppStore store;
 
   @override
-  Widget build(BuildContext context) => MaterialApp(
-        title: 'Acatrain',
-        debugShowCheckedModeBanner: false,
-        themeMode: ThemeMode.system,
-        theme: _theme(Brightness.light),
-        darkTheme: _theme(Brightness.dark),
-        home: HomeShell(store: store),
-      );
+  Widget build(BuildContext context) => AnimatedBuilder(
+    animation: store,
+    builder:
+        (context, _) => MaterialApp(
+          title: 'Acatrain',
+          debugShowCheckedModeBanner: false,
+          locale:
+              store.languageCode == 'zh_HK'
+                  ? const Locale('zh', 'HK')
+                  : const Locale('en'),
+          supportedLocales: const [Locale('en'), Locale('zh', 'HK')],
+          localizationsDelegates: const [
+            GlobalMaterialLocalizations.delegate,
+            GlobalWidgetsLocalizations.delegate,
+            GlobalCupertinoLocalizations.delegate,
+          ],
+          themeMode: switch (store.appearance) {
+            'light' => ThemeMode.light,
+            'dark' => ThemeMode.dark,
+            _ => ThemeMode.system,
+          },
+          theme: _theme(Brightness.light),
+          darkTheme: _theme(Brightness.dark),
+          home: HomeShell(store: store),
+        ),
+  );
 
   ThemeData _theme(Brightness brightness) {
-    final colors = brightness == Brightness.light
-        ? const ColorScheme(
-            brightness: Brightness.light,
-            primary: Color(0xFF36684F),
-            onPrimary: Color(0xFFFFFFFF),
-            primaryContainer: Color(0xFFB8F0CF),
-            onPrimaryContainer: Color(0xFF0E3A26),
-            secondary: Color(0xFF4E6356),
-            onSecondary: Color(0xFFFFFFFF),
-            secondaryContainer: Color(0xFFD0E8D7),
-            onSecondaryContainer: Color(0xFF0B2616),
-            tertiary: Color(0xFF3B6470),
-            onTertiary: Color(0xFFFFFFFF),
-            tertiaryContainer: Color(0xFFBFE9F8),
-            onTertiaryContainer: Color(0xFF0A3642),
-            error: Color(0xFFBA1A1A),
-            onError: Color(0xFFFFFFFF),
-            errorContainer: Color(0xFFFFDAD6),
-            onErrorContainer: Color(0xFF410002),
-            surface: Color(0xFFF6FBF4),
-            onSurface: Color(0xFF171D19),
-            surfaceContainerLowest: Color(0xFFFFFFFF),
-            surfaceContainerLow: Color(0xFFF0F5EE),
-            surfaceContainer: Color(0xFFEAEFE9),
-            surfaceContainerHigh: Color(0xFFE4EAE3),
-            surfaceContainerHighest: Color(0xFFDFE4DD),
-            onSurfaceVariant: Color(0xFF404943),
-            outline: Color(0xFF707973),
-            outlineVariant: Color(0xFFC0C9C1),
-            inverseSurface: Color(0xFF2C322E),
-            onInverseSurface: Color(0xFFEDF2EB),
-            inversePrimary: Color(0xFF9DD4B4),
-          )
-        : ColorScheme.fromSeed(
-            seedColor: const Color(0xFF426B58),
-            brightness: Brightness.dark,
-          );
-    final tones = brightness == Brightness.light
-        ? AcatrainTones.light
-        : AcatrainTones.dark(colors);
+    final colors =
+        brightness == Brightness.light
+            ? const ColorScheme(
+              brightness: Brightness.light,
+              primary: Color(0xFF36684F),
+              onPrimary: Color(0xFFFFFFFF),
+              primaryContainer: Color(0xFFB8F0CF),
+              onPrimaryContainer: Color(0xFF0E3A26),
+              secondary: Color(0xFF4E6356),
+              onSecondary: Color(0xFFFFFFFF),
+              secondaryContainer: Color(0xFFD0E8D7),
+              onSecondaryContainer: Color(0xFF0B2616),
+              tertiary: Color(0xFF3B6470),
+              onTertiary: Color(0xFFFFFFFF),
+              tertiaryContainer: Color(0xFFBFE9F8),
+              onTertiaryContainer: Color(0xFF0A3642),
+              error: Color(0xFFBA1A1A),
+              onError: Color(0xFFFFFFFF),
+              errorContainer: Color(0xFFFFDAD6),
+              onErrorContainer: Color(0xFF410002),
+              surface: Color(0xFFF6FBF4),
+              onSurface: Color(0xFF171D19),
+              surfaceContainerLowest: Color(0xFFFFFFFF),
+              surfaceContainerLow: Color(0xFFF0F5EE),
+              surfaceContainer: Color(0xFFEAEFE9),
+              surfaceContainerHigh: Color(0xFFE4EAE3),
+              surfaceContainerHighest: Color(0xFFDFE4DD),
+              onSurfaceVariant: Color(0xFF404943),
+              outline: Color(0xFF707973),
+              outlineVariant: Color(0xFFC0C9C1),
+              inverseSurface: Color(0xFF2C322E),
+              onInverseSurface: Color(0xFFEDF2EB),
+              inversePrimary: Color(0xFF9DD4B4),
+            )
+            : ColorScheme.fromSeed(
+              seedColor: const Color(0xFF426B58),
+              brightness: Brightness.dark,
+            );
+    final tones =
+        brightness == Brightness.light
+            ? AcatrainTones.light
+            : AcatrainTones.dark(colors);
 
     final textTheme = TextTheme(
-      displaySmall: _type(size: 36, height: 42, weight: 750, letterSpacing: -1.2),
-      headlineLarge: _type(size: 32, height: 38, weight: 750, letterSpacing: -1.0),
-      headlineMedium: _type(size: 28, height: 34, weight: 700, letterSpacing: -0.5),
-      headlineSmall: _type(size: 24, height: 30, weight: 700, letterSpacing: -0.4),
+      displaySmall: _type(
+        size: 36,
+        height: 42,
+        weight: 750,
+        letterSpacing: -1.2,
+      ),
+      headlineLarge: _type(
+        size: 32,
+        height: 38,
+        weight: 750,
+        letterSpacing: -1.0,
+      ),
+      headlineMedium: _type(
+        size: 28,
+        height: 34,
+        weight: 700,
+        letterSpacing: -0.5,
+      ),
+      headlineSmall: _type(
+        size: 24,
+        height: 30,
+        weight: 700,
+        letterSpacing: -0.4,
+      ),
       titleLarge: _type(size: 20, height: 26, weight: 700, letterSpacing: -0.3),
-      titleMedium: _type(size: 16, height: 22, weight: 650, letterSpacing: -0.1),
+      titleMedium: _type(
+        size: 16,
+        height: 22,
+        weight: 650,
+        letterSpacing: -0.1,
+      ),
       titleSmall: _type(size: 14, height: 20, weight: 650),
       bodyLarge: _type(size: 16, height: 24, weight: 400),
       bodyMedium: _type(size: 14, height: 20, weight: 400),
@@ -130,10 +173,7 @@ class AcatrainApp extends StatelessWidget {
       labelLarge: _type(size: 14, height: 20, weight: 650),
       labelMedium: _type(size: 12, height: 16, weight: 600),
       labelSmall: _type(size: 12, height: 16, weight: 700, letterSpacing: 0.8),
-    ).apply(
-      bodyColor: colors.onSurface,
-      displayColor: colors.onSurface,
-    );
+    ).apply(bodyColor: colors.onSurface, displayColor: colors.onSurface);
 
     return ThemeData(
       useMaterial3: true,
@@ -155,7 +195,10 @@ class AcatrainApp extends StatelessWidget {
         filled: true,
         fillColor: colors.surfaceContainerHigh,
         hintStyle: TextStyle(color: colors.onSurfaceVariant),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 20,
+          vertical: 16,
+        ),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(AcatrainRadii.full),
           borderSide: BorderSide.none,
@@ -188,13 +231,21 @@ class AcatrainApp extends StatelessWidget {
         ),
         labelTextStyle: WidgetStateProperty.resolveWith((states) {
           final selected = states.contains(WidgetState.selected);
-          return _type(size: 12, height: 16, weight: selected ? 700 : 550)
-              .copyWith(color: selected ? colors.onSurface : colors.onSurfaceVariant);
+          return _type(
+            size: 12,
+            height: 16,
+            weight: selected ? 700 : 550,
+          ).copyWith(
+            color: selected ? colors.onSurface : colors.onSurfaceVariant,
+          );
         }),
         iconTheme: WidgetStateProperty.resolveWith((states) {
           final selected = states.contains(WidgetState.selected);
           return IconThemeData(
-            color: selected ? colors.onSecondaryContainer : colors.onSurfaceVariant,
+            color:
+                selected
+                    ? colors.onSecondaryContainer
+                    : colors.onSurfaceVariant,
           );
         }),
       ),
@@ -235,11 +286,27 @@ class AcatrainApp extends StatelessWidget {
 }
 
 const _weekdays = [
-  'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'
+  'Monday',
+  'Tuesday',
+  'Wednesday',
+  'Thursday',
+  'Friday',
+  'Saturday',
+  'Sunday',
 ];
 const _months = [
-  'January', 'February', 'March', 'April', 'May', 'June', 'July', 'August',
-  'September', 'October', 'November', 'December'
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
 ];
 
 String _formatEyebrowDate(DateTime date) =>
@@ -301,9 +368,7 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   void _open(StudySet set) {
     Navigator.push(
       context,
-      AcatrainPageRoute<void>(
-        builder: (_) => SetPage(set: set, store: store),
-      ),
+      AcatrainPageRoute<void>(builder: (_) => SetPage(set: set, store: store)),
     );
   }
 
@@ -311,7 +376,8 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
     Navigator.push(
       context,
       AcatrainPageRoute<void>(
-        builder: (_) => StudyPage(set: set, items: items, quiz: quiz, store: store),
+        builder:
+            (_) => StudyPage(set: set, items: items, quiz: quiz, store: store),
       ),
     );
   }
@@ -327,161 +393,246 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) => AnimatedBuilder(
-        animation: store,
-        builder: (context, _) {
-          final windowClass = AcatrainLayout.classOf(context);
-          final useRail = windowClass != AcatrainWindowClass.compact;
-          final expanded = windowClass == AcatrainWindowClass.expanded;
-          final theme = Theme.of(context);
-          final reduceMotion = MediaQuery.of(context).disableAnimations;
-          return Scaffold(
-            appBar: expanded ? null : _appBar(theme),
-            body: Column(
-              children: [
-                AnimatedSwitcher(
-                  duration: acatrainFastMotion,
-                  child: store.busy
+    animation: store,
+    builder: (context, _) {
+      final windowClass = AcatrainLayout.classOf(context);
+      final useRail = windowClass != AcatrainWindowClass.compact;
+      final expanded = windowClass == AcatrainWindowClass.expanded;
+      final theme = Theme.of(context);
+      final reduceMotion = MediaQuery.of(context).disableAnimations;
+      return Scaffold(
+        appBar: expanded ? null : _appBar(theme),
+        body: Column(
+          children: [
+            AnimatedSwitcher(
+              duration: acatrainFastMotion,
+              child:
+                  store.busy
                       ? const LinearProgressIndicator(
-                          key: ValueKey('busy'),
-                          minHeight: 2,
-                        )
-                      : const SizedBox(
-                          key: ValueKey('idle'),
-                          height: 2,
+                        key: ValueKey('busy'),
+                        minHeight: 2,
+                      )
+                      : const SizedBox(key: ValueKey('idle'), height: 2),
+            ),
+            Expanded(
+              child: Row(
+                children: [
+                  if (useRail)
+                    _ExpressiveRail(
+                      selectedIndex: _page,
+                      onSelected: _selectPage,
+                      labels:
+                          _labels.map((label) => tr(context, label)).toList(),
+                      icons: _icons,
+                      selectedIcons: _selectedIcons,
+                    ),
+                  Expanded(
+                    child: Align(
+                      alignment: Alignment.topCenter,
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(
+                          maxWidth: AcatrainLayout.maxContentWidth(context),
                         ),
-                ),
-                Expanded(
-                  child: Row(
-                    children: [
-                      if (useRail)
-                        _ExpressiveRail(
-                          selectedIndex: _page,
-                          onSelected: _selectPage,
-                          labels: _labels,
-                          icons: _icons,
-                          selectedIcons: _selectedIcons,
-                        ),
-                      Expanded(
-                        child: Align(
-                          alignment: Alignment.topCenter,
-                          child: ConstrainedBox(
-                            constraints: BoxConstraints(
-                              maxWidth: AcatrainLayout.maxContentWidth(context),
-                            ),
-                            child: AnimatedSwitcher(
-                              duration: reduceMotion ? Duration.zero : acatrainMediumMotion,
-                              switchInCurve: Curves.easeOutCubic,
-                              switchOutCurve: Curves.easeInCubic,
-                              transitionBuilder: (child, animation) {
-                                final slide = Tween<Offset>(
-                                  begin: const Offset(0.025, 0),
-                                  end: Offset.zero,
-                                ).animate(CurvedAnimation(
-                                  parent: animation,
-                                  curve: Curves.easeOutBack,
-                                ));
-                                return FadeTransition(
-                                  opacity: animation,
-                                  child: SlideTransition(
-                                    position: slide,
-                                    child: child,
-                                  ),
-                                );
-                              },
-                              child: KeyedSubtree(
-                                key: ValueKey(_page),
-                                child: switch (_page) {
-                                  0 => expanded ? _todayExpanded(theme) : _today(theme),
-                                  1 => _library(theme, expanded: expanded),
-                                  2 => _review(theme, expanded: expanded),
-                                  _ => _settings(theme, expanded: expanded),
-                                },
+                        child: AnimatedSwitcher(
+                          duration:
+                              reduceMotion
+                                  ? Duration.zero
+                                  : acatrainMediumMotion,
+                          switchInCurve: Curves.easeOutCubic,
+                          switchOutCurve: Curves.easeInCubic,
+                          transitionBuilder: (child, animation) {
+                            final slide = Tween<Offset>(
+                              begin: const Offset(0.025, 0),
+                              end: Offset.zero,
+                            ).animate(
+                              CurvedAnimation(
+                                parent: animation,
+                                curve: Curves.easeOutBack,
                               ),
-                            ),
+                            );
+                            return FadeTransition(
+                              opacity: animation,
+                              child: SlideTransition(
+                                position: slide,
+                                child: child,
+                              ),
+                            );
+                          },
+                          child: KeyedSubtree(
+                            key: ValueKey(_page),
+                            child: switch (_page) {
+                              0 =>
+                                expanded
+                                    ? _todayExpanded(theme)
+                                    : _today(theme),
+                              1 => _library(theme, expanded: expanded),
+                              2 => _review(theme, expanded: expanded),
+                              _ => _settings(theme, expanded: expanded),
+                            },
                           ),
                         ),
                       ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            bottomNavigationBar: useRail
-                ? null
-                : NavigationBar(
-                    selectedIndex: _page,
-                    onDestinationSelected: _selectPage,
-                    destinations: List.generate(
-                      _labels.length,
-                      (i) => NavigationDestination(
-                        icon: Icon(_icons[i]),
-                        selectedIcon: Icon(_selectedIcons[i]),
-                        label: _labels[i],
-                      ),
-                    ),
-                  ),
-          );
-        },
-      );
-
-  PreferredSizeWidget _appBar(ThemeData theme) => AppBar(
-        titleSpacing: 20,
-        title: _page == 0
-            ? Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  ExpressiveBadge(
-                    shape: ExpressiveShape.cookie9,
-                    size: 34,
-                    color: theme.colorScheme.primary,
-                    child: Icon(
-                      Icons.school_rounded,
-                      size: 17,
-                      color: theme.colorScheme.onPrimary,
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Text(
-                    'acatrain',
-                    style: theme.textTheme.titleLarge?.copyWith(
-                      fontSize: 22,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: -0.6,
                     ),
                   ),
                 ],
-              )
-            : null,
-        actions: _appBarActions(theme),
+              ),
+            ),
+          ],
+        ),
+        bottomNavigationBar:
+            useRail
+                ? null
+                : NavigationBar(
+                  selectedIndex: _page,
+                  onDestinationSelected: _selectPage,
+                  destinations: List.generate(
+                    _labels.length,
+                    (i) => NavigationDestination(
+                      icon: Icon(_icons[i]),
+                      selectedIcon: Icon(_selectedIcons[i]),
+                      label: tr(context, _labels[i]),
+                    ),
+                  ),
+                ),
       );
+    },
+  );
+
+  PreferredSizeWidget _appBar(ThemeData theme) => AppBar(
+    titleSpacing: 20,
+    title:
+        _page == 0
+            ? Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ExpressiveBadge(
+                  shape: ExpressiveShape.cookie9,
+                  size: 34,
+                  color: theme.colorScheme.primary,
+                  child: Icon(
+                    Icons.school_rounded,
+                    size: 17,
+                    color: theme.colorScheme.onPrimary,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Text(
+                  'acatrain',
+                  style: theme.textTheme.titleLarge?.copyWith(
+                    fontSize: 22,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: -0.6,
+                  ),
+                ),
+              ],
+            )
+            : null,
+    actions: _appBarActions(theme),
+  );
 
   List<Widget> _appBarActions(ThemeData theme) => [
-        IconButton(
-          tooltip: 'Sync content',
-          onPressed: store.busy ? null : store.syncContent,
-          icon: const Icon(Icons.sync_rounded),
-        ),
-        Padding(
-          padding: const EdgeInsets.only(left: 4, right: 12),
-          child: Tooltip(
-            message: store.uid != null
-                ? (store.email ?? 'Signed in')
-                : 'Guest',
-            child: CircleAvatar(
-              radius: 16,
-              backgroundColor: theme.colorScheme.tertiaryContainer,
-              child: Text(
-                (store.email?.isNotEmpty ?? false) ? store.email![0].toUpperCase() : 'A',
-                style: theme.textTheme.labelLarge?.copyWith(
-                  color: theme.colorScheme.onTertiaryContainer,
+    IconButton(
+      tooltip: tr(context, 'Sync content'),
+      onPressed: store.busy ? null : store.syncContent,
+      icon: const Icon(Icons.sync_rounded),
+    ),
+    Padding(
+      padding: const EdgeInsets.only(left: 4, right: 12),
+      child: PopupMenuButton<String>(
+        tooltip: store.email ?? tr(context, 'Guest'),
+        onSelected: (value) {
+          switch (value) {
+            case 'info':
+              _personalInfo();
+              break;
+            case 'settings':
+              _selectPage(3);
+              break;
+            case 'theme':
+              store.setAppearance(switch (store.appearance) {
+                'system' => 'light',
+                'light' => 'dark',
+                _ => 'system',
+              });
+              break;
+            case 'auth':
+              if (store.uid == null) {
+                _login();
+              } else {
+                store.signOut();
+              }
+              break;
+          }
+        },
+        itemBuilder:
+            (context) => [
+              PopupMenuItem<String>(
+                enabled: false,
+                child: Text(
+                  store.displayName ?? store.email ?? tr(context, 'Guest'),
                 ),
               ),
+              PopupMenuItem(
+                value: 'info',
+                child: ListTile(
+                  leading: const Icon(Icons.person_outline_rounded),
+                  title: Text(tr(context, 'Personal info')),
+                ),
+              ),
+              PopupMenuItem(
+                value: 'settings',
+                child: ListTile(
+                  leading: const Icon(Icons.tune_rounded),
+                  title: Text(tr(context, 'Settings')),
+                ),
+              ),
+              PopupMenuItem(
+                value: 'theme',
+                child: ListTile(
+                  leading: const Icon(Icons.brightness_6_outlined),
+                  title: Text(
+                    '${tr(context, 'Appearance')}: ${tr(context, switch (store.appearance) {
+                      'light' => 'Light',
+                      'dark' => 'Dark',
+                      _ => 'System',
+                    })}',
+                  ),
+                ),
+              ),
+              PopupMenuItem(
+                value: 'auth',
+                child: ListTile(
+                  leading: Icon(
+                    store.uid == null
+                        ? Icons.login_rounded
+                        : Icons.logout_rounded,
+                  ),
+                  title: Text(
+                    tr(context, store.uid == null ? 'Sign in' : 'Sign out'),
+                  ),
+                ),
+              ),
+            ],
+        child: CircleAvatar(
+          radius: 18,
+          backgroundColor: theme.colorScheme.tertiaryContainer,
+          child: Text(
+            (store.displayName?.isNotEmpty ?? false)
+                ? store.displayName![0].toUpperCase()
+                : (store.email?.isNotEmpty ?? false)
+                ? store.email![0].toUpperCase()
+                : 'A',
+            style: theme.textTheme.labelLarge?.copyWith(
+              color: theme.colorScheme.onTertiaryContainer,
             ),
           ),
         ),
-      ];
+      ),
+    ),
+  ];
 
-  Widget _pageHeader(ThemeData theme, String title, {String? eyebrow}) => Padding(
+  Widget _pageHeader(ThemeData theme, String title, {String? eyebrow}) =>
+      Padding(
         padding: const EdgeInsets.fromLTRB(8, 0, 0, 8),
         child: SizedBox(
           height: 88,
@@ -500,10 +651,7 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
                           color: theme.colorScheme.onSurfaceVariant,
                         ),
                       ),
-                    Text(
-                      title,
-                      style: theme.textTheme.headlineLarge,
-                    ),
+                    Text(title, style: theme.textTheme.headlineLarge),
                   ],
                 ),
               ),
@@ -520,7 +668,9 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
       children: [
         const SizedBox(height: 4),
         Text(
-          _formatEyebrowDate(DateTime.now()),
+          isCantonese(context)
+              ? '${DateTime.now().month} 月 ${DateTime.now().day} 日'
+              : _formatEyebrowDate(DateTime.now()),
           style: theme.textTheme.bodyMedium?.copyWith(
             fontWeight: FontWeight.w600,
             color: theme.colorScheme.onSurfaceVariant,
@@ -528,7 +678,7 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
         ),
         const SizedBox(height: 2),
         Text(
-          'Make room\nfor learning.',
+          tr(context, 'Make room\nfor learning.'),
           style: theme.textTheme.displaySmall,
         ),
         const SizedBox(height: 20),
@@ -548,13 +698,13 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
             children: [
               Expanded(
                 child: Text(
-                  'Your study sets',
+                  tr(context, 'Your study sets'),
                   style: theme.textTheme.titleLarge,
                 ),
               ),
               TextButton(
                 onPressed: () => setState(() => _page = 1),
-                child: const Text('See all'),
+                child: Text(tr(context, 'See all')),
               ),
             ],
           ),
@@ -587,13 +737,18 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        _formatEyebrowDate(DateTime.now()),
+                        isCantonese(context)
+                            ? '${DateTime.now().month} 月 ${DateTime.now().day} 日'
+                            : _formatEyebrowDate(DateTime.now()),
                         style: theme.textTheme.bodyMedium?.copyWith(
                           fontWeight: FontWeight.w600,
                           color: theme.colorScheme.onSurfaceVariant,
                         ),
                       ),
-                      Text('Make room for learning.', style: theme.textTheme.headlineLarge),
+                      Text(
+                        tr(context, 'Make room for learning.'),
+                        style: theme.textTheme.headlineLarge,
+                      ),
                     ],
                   ),
                 ),
@@ -603,9 +758,9 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
                   height: 56,
                   child: TextField(
                     textInputAction: TextInputAction.search,
-                    decoration: const InputDecoration(
-                      prefixIcon: Icon(Icons.search_rounded),
-                      hintText: 'Search study sets',
+                    decoration: InputDecoration(
+                      prefixIcon: const Icon(Icons.search_rounded),
+                      hintText: tr(context, 'Search study sets'),
                     ),
                     onSubmitted: _searchLibrary,
                   ),
@@ -629,24 +784,36 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
                           store: store,
                           compact: false,
                           onOpen: _open,
-                          onStart: (set, items) => _startSession(set, items, false),
-                          onPracticeTest: (set, items) => _startSession(set, items, true),
+                          onStart:
+                              (set, items) => _startSession(set, items, false),
+                          onPracticeTest:
+                              (set, items) => _startSession(set, items, true),
                         ),
                         Padding(
                           padding: const EdgeInsets.fromLTRB(4, 28, 4, 14),
                           child: Row(
                             children: [
                               Expanded(
-                                child: Text('Your study sets', style: theme.textTheme.titleLarge?.copyWith(fontSize: 22)),
+                                child: Text(
+                                  tr(context, 'Your study sets'),
+                                  style: theme.textTheme.titleLarge?.copyWith(
+                                    fontSize: 22,
+                                  ),
+                                ),
                               ),
                               TextButton(
                                 onPressed: () => setState(() => _page = 1),
-                                child: const Text('Open library'),
+                                child: Text(tr(context, 'Open library')),
                               ),
                             ],
                           ),
                         ),
-                        _DesktopSetGrid(sets: store.bundle.sets, store: store, onOpen: _open, columns: 3),
+                        _DesktopSetGrid(
+                          sets: store.bundle.sets,
+                          store: store,
+                          onOpen: _open,
+                          columns: 3,
+                        ),
                       ],
                     ),
                   ),
@@ -654,7 +821,11 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
                 const SizedBox(width: 24),
                 SizedBox(
                   width: 340,
-                  child: _ReviewQueuePanel(store: store, onOpenSet: _open, onStart: _startSession),
+                  child: _ReviewQueuePanel(
+                    store: store,
+                    onOpenSet: _open,
+                    onStart: _startSession,
+                  ),
                 ),
               ],
             ),
@@ -670,29 +841,31 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
       ...store.bundle.sets.map((s) => s.subject).toSet(),
     ];
     final filter = subjects.contains(_subject) ? _subject : 'All';
-    var sets = store.bundle.sets
-        .where(
-          (s) =>
-              (filter == 'All' || s.subject == filter) &&
-              '${s.title} ${s.subject} ${s.description}'
-                  .toLowerCase()
-                  .contains(_query.toLowerCase()),
-        )
-        .toList();
+    var sets =
+        store.bundle.sets
+            .where(
+              (s) =>
+                  (filter == 'All' || s.subject == filter) &&
+                  '${s.title} ${s.subject} ${s.description}'
+                      .toLowerCase()
+                      .contains(_query.toLowerCase()),
+            )
+            .toList();
     if (_sortMostDue) {
-      sets = [...sets]..sort((a, b) => store.dueCount(b).compareTo(store.dueCount(a)));
+      sets = [...sets]
+        ..sort((a, b) => store.dueCount(b).compareTo(store.dueCount(a)));
     }
     final totalItems = sets.fold<int>(0, (n, s) => n + s.items.length);
     return ListView(
       padding: AcatrainLayout.pagePadding(context),
       children: [
-        if (expanded) _pageHeader(theme, 'Library'),
+        if (expanded) _pageHeader(theme, tr(context, 'Library')),
         if (!expanded) ...[
           const SizedBox(height: 4),
-          Text('Library', style: theme.textTheme.displaySmall),
+          Text(tr(context, 'Library'), style: theme.textTheme.displaySmall),
           const SizedBox(height: 6),
           Text(
-            'Everything you can study, organised in one place.',
+            tr(context, 'Everything you can study, organised in one place.'),
             style: theme.textTheme.bodyLarge?.copyWith(
               color: theme.colorScheme.onSurfaceVariant,
             ),
@@ -702,7 +875,10 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
         TextField(
           decoration: InputDecoration(
             prefixIcon: const Icon(Icons.search_rounded),
-            hintText: expanded ? 'Search study sets' : 'Search your study sets',
+            hintText: tr(
+              context,
+              expanded ? 'Search study sets' : 'Search your study sets',
+            ),
           ),
           onChanged: (value) => setState(() => _query = value),
         ),
@@ -716,7 +892,7 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
             itemBuilder: (context, i) {
               final subject = subjects[i];
               return _FilterChip(
-                label: subject,
+                label: tr(context, subject),
                 selected: filter == subject,
                 onSelected: () => setState(() => _subject = subject),
               );
@@ -729,7 +905,9 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
             children: [
               Expanded(
                 child: Text(
-                  '${sets.length} sets · $totalItems items',
+                  isCantonese(context)
+                      ? '${sets.length} 個題組 · $totalItems 題'
+                      : '${sets.length} sets · $totalItems items',
                   style: theme.textTheme.bodyMedium?.copyWith(
                     fontWeight: acatrainWeight(550),
                     color: theme.colorScheme.onSurfaceVariant,
@@ -741,12 +919,18 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
                 icon: Icon(
                   Icons.swap_vert_rounded,
                   size: 20,
-                  color: _sortMostDue ? theme.colorScheme.primary : theme.colorScheme.onSurfaceVariant,
+                  color:
+                      _sortMostDue
+                          ? theme.colorScheme.primary
+                          : theme.colorScheme.onSurfaceVariant,
                 ),
                 label: Text(
-                  'Most due',
+                  tr(context, 'Most due'),
                   style: TextStyle(
-                    color: _sortMostDue ? theme.colorScheme.primary : theme.colorScheme.onSurfaceVariant,
+                    color:
+                        _sortMostDue
+                            ? theme.colorScheme.primary
+                            : theme.colorScheme.onSurfaceVariant,
                   ),
                 ),
               ),
@@ -756,8 +940,8 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
         if (sets.isEmpty)
           _EmptyState(
             icon: Icons.search_off_rounded,
-            title: 'No matching study sets',
-            message: 'Try another keyword or subject filter.',
+            title: tr(context, 'No matching study sets'),
+            message: tr(context, 'Try another keyword or subject filter.'),
           )
         else
           _LibraryList(sets: sets, store: store, onOpen: _open),
@@ -770,13 +954,19 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
     return ListView(
       padding: AcatrainLayout.pagePadding(context),
       children: [
-        if (expanded) _pageHeader(theme, 'Review, not relearn.'),
+        if (expanded) _pageHeader(theme, tr(context, 'Review, not relearn.')),
         if (!expanded) ...[
           const SizedBox(height: 4),
-          Text('Review, not relearn.', style: theme.textTheme.displaySmall),
+          Text(
+            tr(context, 'Review, not relearn.'),
+            style: theme.textTheme.displaySmall,
+          ),
           const SizedBox(height: 8),
           Text(
-            'Due items rise to the top. Missed answers stay easy to revisit.',
+            tr(
+              context,
+              'Due items rise to the top. Missed answers stay easy to revisit.',
+            ),
             style: theme.textTheme.bodyLarge?.copyWith(
               color: theme.colorScheme.onSurfaceVariant,
             ),
@@ -784,13 +974,14 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
           const SizedBox(height: 22),
         ],
         if (caughtUp)
-          const _EmptyState(
+          _EmptyState(
             icon: Icons.done_all_rounded,
-            title: 'You are caught up',
-            message: 'There are no review items due right now.',
+            title: tr(context, 'You are caught up'),
+            message: tr(context, 'There are no review items due right now.'),
           ),
         ...store.bundle.sets.map((set) {
-          final mistakes = set.items.where((i) => store.isWrong(set, i)).toList();
+          final mistakes =
+              set.items.where((i) => store.isWrong(set, i)).toList();
           final due = store.dueCount(set);
           final style = SubjectStyle.of(context, set.subject);
           return Padding(
@@ -808,17 +999,26 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
                           shape: style.shape,
                           size: 44,
                           color: style.container,
-                          child: Icon(style.icon, color: style.onContainer, size: 22),
+                          child: Icon(
+                            style.icon,
+                            color: style.onContainer,
+                            size: 22,
+                          ),
                         ),
                         const SizedBox(width: 14),
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(set.title, style: theme.textTheme.titleMedium),
+                              Text(
+                                set.title,
+                                style: theme.textTheme.titleMedium,
+                              ),
                               const SizedBox(height: 4),
                               Text(
-                                '$due due · ${mistakes.length} missed',
+                                isCantonese(context)
+                                    ? '$due 題待溫習 · ${mistakes.length} 題錯題'
+                                    : '$due due · ${mistakes.length} missed',
                                 style: theme.textTheme.bodyMedium?.copyWith(
                                   color: theme.colorScheme.onSurfaceVariant,
                                 ),
@@ -834,13 +1034,14 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
                       children: [
                         FilledButton(
                           onPressed: () => _open(set),
-                          child: const Text('Review set'),
+                          child: Text(tr(context, 'Review set')),
                         ),
                         OutlinedButton(
-                          onPressed: mistakes.isEmpty
-                              ? null
-                              : () => _startSession(set, mistakes, false),
-                          child: const Text('Practise mistakes'),
+                          onPressed:
+                              mistakes.isEmpty
+                                  ? null
+                                  : () => _startSession(set, mistakes, false),
+                          child: Text(tr(context, 'Practise mistakes')),
                         ),
                       ],
                     );
@@ -868,94 +1069,267 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   }
 
   Widget _settings(ThemeData theme, {required bool expanded}) => ListView(
-        padding: AcatrainLayout.pagePadding(context),
-        children: [
-          if (expanded) _pageHeader(theme, 'Your learning space'),
-          if (!expanded) ...[
-            const SizedBox(height: 4),
-            Text('Your learning space', style: theme.textTheme.displaySmall),
-            const SizedBox(height: 8),
-            Text(
-              'Account, sync and content controls without getting in your way.',
-              style: theme.textTheme.bodyLarge?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-            const SizedBox(height: 22),
-          ],
-          _SettingsCard(
-            icon: store.uid == null ? Icons.person_outline_rounded : Icons.verified_user_outlined,
-            title: 'Account & progress',
-            body: store.email ?? 'Guest mode. No account needed to study.',
-            footer:
-                'Guest and account progress stay separate. Acatrain never uploads guest progress automatically.',
-            child: Wrap(
-              spacing: 10,
-              runSpacing: 10,
-              children: [
-                FilledButton.icon(
-                  onPressed: store.busy
-                      ? null
-                      : store.uid == null
-                          ? _login
-                          : store.syncProgress,
-                  icon: Icon(
-                    store.uid == null ? Icons.login_rounded : Icons.cloud_sync_outlined,
+    padding: AcatrainLayout.pagePadding(context),
+    children: [
+      if (expanded) _pageHeader(theme, tr(context, 'Your learning space')),
+      if (!expanded) ...[
+        const SizedBox(height: 4),
+        Text(
+          tr(context, 'Your learning space'),
+          style: theme.textTheme.displaySmall,
+        ),
+        const SizedBox(height: 22),
+      ],
+      LayoutBuilder(
+        builder: (context, constraints) {
+          final twoColumns = constraints.maxWidth >= 760;
+          final cardWidth =
+              twoColumns
+                  ? (constraints.maxWidth - 14) / 2
+                  : constraints.maxWidth;
+          return Wrap(
+            spacing: 14,
+            runSpacing: 14,
+            children: [
+              SizedBox(
+                width: cardWidth,
+                child: _SettingsCard(
+                  icon:
+                      store.uid == null
+                          ? Icons.person_outline_rounded
+                          : Icons.verified_user_outlined,
+                  title: tr(context, 'Account & progress'),
+                  body:
+                      store.email ??
+                      tr(context, 'Guest mode. No account needed to study.'),
+                  footer: tr(
+                    context,
+                    'Guest and account progress stay separate. Acatrain never uploads guest progress automatically.',
                   ),
-                  label: Text(
-                    store.uid == null ? 'Sign in or create account' : 'Sync progress',
+                  child: Wrap(
+                    spacing: 10,
+                    runSpacing: 10,
+                    children: [
+                      FilledButton.icon(
+                        onPressed:
+                            store.busy
+                                ? null
+                                : store.uid == null
+                                ? _login
+                                : store.syncProgress,
+                        icon: Icon(
+                          store.uid == null
+                              ? Icons.login_rounded
+                              : Icons.cloud_sync_outlined,
+                        ),
+                        label: Text(
+                          tr(
+                            context,
+                            store.uid == null
+                                ? 'Sign in or create account'
+                                : 'Sync progress',
+                          ),
+                        ),
+                      ),
+                      if (store.uid != null)
+                        OutlinedButton(
+                          onPressed: store.busy ? null : _personalInfo,
+                          child: Text(tr(context, 'Personal info')),
+                        ),
+                    ],
                   ),
                 ),
-                if (store.uid != null)
-                  OutlinedButton(
-                    onPressed: store.busy ? null : store.signOut,
-                    child: const Text('Sign out'),
+              ),
+              SizedBox(
+                width: cardWidth,
+                child: _SettingsCard(
+                  icon: Icons.palette_outlined,
+                  title: tr(context, 'Appearance'),
+                  body: tr(
+                    context,
+                    'Choose how Acatrain looks on this device.',
                   ),
-              ],
+                  footer: tr(context, 'System follows your device setting.'),
+                  child: Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      for (final (value, label) in [
+                        ('system', 'System'),
+                        ('light', 'Light'),
+                        ('dark', 'Dark'),
+                      ])
+                        ChoiceChip(
+                          label: Text(tr(context, label)),
+                          selected: store.appearance == value,
+                          onSelected: (_) => store.setAppearance(value),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+              SizedBox(
+                width: cardWidth,
+                child: _SettingsCard(
+                  icon: Icons.language_rounded,
+                  title: tr(context, 'Language'),
+                  body: tr(context, 'Choose the display language.'),
+                  footer: tr(
+                    context,
+                    'Study content keeps its original language.',
+                  ),
+                  child: DropdownButtonFormField<String>(
+                    isExpanded: true,
+                    initialValue: store.languageCode,
+                    items: [
+                      DropdownMenuItem(
+                        value: 'en',
+                        child: Text(tr(context, 'English')),
+                      ),
+                      DropdownMenuItem(
+                        value: 'zh_HK',
+                        child: Text(tr(context, 'Cantonese (繁體中文)')),
+                      ),
+                    ],
+                    onChanged: (value) {
+                      if (value != null) store.setLanguageCode(value);
+                    },
+                  ),
+                ),
+              ),
+              SizedBox(
+                width: cardWidth,
+                child: _SettingsCard(
+                  icon: Icons.cloud_outlined,
+                  title: tr(context, 'Live content'),
+                  body: tr(
+                    context,
+                    store.cloudConfigured
+                        ? 'Connected to your published content service.'
+                        : 'Bundled demo. Cloud service is not configured.',
+                  ),
+                  footer:
+                      isCantonese(context)
+                          ? '版本 ${store.releaseId}'
+                          : 'Release ${store.releaseId}',
+                  child: OutlinedButton.icon(
+                    onPressed: store.busy ? null : store.syncContent,
+                    icon: const Icon(Icons.sync_rounded),
+                    label: Text(tr(context, 'Check for content updates')),
+                  ),
+                ),
+              ),
+              SizedBox(
+                width: cardWidth,
+                child: _SettingsCard(
+                  icon: Icons.speed_rounded,
+                  title: tr(context, 'Display & motion'),
+                  body: tr(
+                    context,
+                    'Animations follow the display refresh rate.',
+                  ),
+                  footer: tr(
+                    context,
+                    'The device can lower its refresh rate to save power.',
+                  ),
+                  child: Text(
+                    tr(context, 'Motion follows your device settings.'),
+                    style: theme.textTheme.bodyMedium,
+                  ),
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+      const SizedBox(height: 20),
+      Text(
+        tr(context, store.status),
+        style: theme.textTheme.bodySmall?.copyWith(
+          color: theme.colorScheme.onSurfaceVariant,
+        ),
+      ),
+      const SizedBox(height: 18),
+      Text('Acatrain 0.1.0 · Build 1', style: theme.textTheme.bodySmall),
+    ],
+  );
+
+  Future<void> _personalInfo() async {
+    if (store.uid == null) {
+      await _login();
+      return;
+    }
+    final controller = TextEditingController(text: store.displayName ?? '');
+    await showDialog<void>(
+      context: context,
+      builder:
+          (dialogContext) => AlertDialog(
+            title: Text(tr(dialogContext, 'Personal info')),
+            content: SizedBox(
+              width: 380,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  TextField(
+                    controller: controller,
+                    maxLength: 80,
+                    decoration: InputDecoration(
+                      labelText: tr(dialogContext, 'Name'),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text('${tr(dialogContext, 'Email')}: ${store.email ?? ''}'),
+                  const SizedBox(height: 12),
+                  OutlinedButton.icon(
+                    onPressed:
+                        store.busy
+                            ? null
+                            : () async {
+                              final ok = await store.signInWithGoogle();
+                              if (dialogContext.mounted) {
+                                ScaffoldMessenger.of(
+                                  dialogContext,
+                                ).showSnackBar(
+                                  SnackBar(
+                                    content: Text(
+                                      tr(dialogContext, store.status),
+                                    ),
+                                  ),
+                                );
+                                if (ok) Navigator.pop(dialogContext);
+                              }
+                            },
+                    icon: const Icon(Icons.account_circle_outlined),
+                    label: Text(tr(dialogContext, 'Connect Google')),
+                  ),
+                ],
+              ),
             ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: Text(
+                  MaterialLocalizations.of(dialogContext).cancelButtonLabel,
+                ),
+              ),
+              FilledButton(
+                onPressed: () async {
+                  final ok = await store.updateDisplayName(controller.text);
+                  if (dialogContext.mounted) {
+                    ScaffoldMessenger.of(dialogContext).showSnackBar(
+                      SnackBar(content: Text(tr(dialogContext, store.status))),
+                    );
+                    if (ok) Navigator.pop(dialogContext);
+                  }
+                },
+                child: Text(tr(dialogContext, 'Save')),
+              ),
+            ],
           ),
-          const SizedBox(height: 14),
-          _SettingsCard(
-            icon: Icons.cloud_outlined,
-            title: 'Live content',
-            body: store.cloudConfigured
-                ? 'Connected to your published content service.'
-                : 'Bundled demo. Cloud service is not configured.',
-            footer:
-                'Release ${store.releaseId}. Study data can update independently; renderer changes still require an app update.',
-            child: OutlinedButton.icon(
-              onPressed: store.busy ? null : store.syncContent,
-              icon: const Icon(Icons.sync_rounded),
-              label: const Text('Check for content updates'),
-            ),
-          ),
-          const SizedBox(height: 14),
-          _SettingsCard(
-            icon: Icons.speed_rounded,
-            title: 'Display & motion',
-            body:
-                'Animations follow the device vsync. Android requests the highest refresh mode available; other platforms use the system display timing.',
-            footer:
-                'The operating system can still lower refresh rate for battery, thermal or window-management reasons.',
-            child: Text(
-              '60 / 90 / 120 / 144Hz and variable-refresh displays are not artificially frame-capped by Acatrain.',
-              style: theme.textTheme.bodyMedium,
-            ),
-          ),
-          const SizedBox(height: 20),
-          Text(
-            store.status,
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
-          const SizedBox(height: 18),
-          Text(
-            'Acatrain 0.1.0 · Build 1\nOriginal practice material, not an official exam or marking scheme.',
-            style: theme.textTheme.bodySmall,
-          ),
-        ],
-      );
+    );
+    controller.dispose();
+  }
 
   Future<void> _login() async {
     await showModalBottomSheet<void>(
@@ -1005,12 +1379,13 @@ class _ExpressiveRail extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 28),
-          for (var i = 0; i < labels.length; i++) _RailDestination(
-            selected: selectedIndex == i,
-            icon: selectedIndex == i ? selectedIcons[i] : icons[i],
-            label: labels[i],
-            onTap: () => onSelected(i),
-          ),
+          for (var i = 0; i < labels.length; i++)
+            _RailDestination(
+              selected: selectedIndex == i,
+              icon: selectedIndex == i ? selectedIcons[i] : icons[i],
+              label: labels[i],
+              onTap: () => onSelected(i),
+            ),
         ],
       ),
     );
@@ -1049,23 +1424,31 @@ class _RailDestination extends StatelessWidget {
                   width: 56,
                   height: 32,
                   decoration: BoxDecoration(
-                    color: selected ? theme.colorScheme.secondaryContainer : Colors.transparent,
+                    color:
+                        selected
+                            ? theme.colorScheme.secondaryContainer
+                            : Colors.transparent,
                     borderRadius: BorderRadius.circular(AcatrainRadii.l),
                   ),
                   alignment: Alignment.center,
                   child: Icon(
                     icon,
-                    color: selected
-                        ? theme.colorScheme.onSecondaryContainer
-                        : theme.colorScheme.onSurfaceVariant,
+                    color:
+                        selected
+                            ? theme.colorScheme.onSecondaryContainer
+                            : theme.colorScheme.onSurfaceVariant,
                   ),
                 ),
                 const SizedBox(height: 4),
                 Text(
                   label,
                   style: theme.textTheme.labelMedium?.copyWith(
-                    fontWeight: selected ? FontWeight.w700 : acatrainWeight(550),
-                    color: selected ? theme.colorScheme.onSurface : theme.colorScheme.onSurfaceVariant,
+                    fontWeight:
+                        selected ? FontWeight.w700 : acatrainWeight(550),
+                    color:
+                        selected
+                            ? theme.colorScheme.onSurface
+                            : theme.colorScheme.onSurfaceVariant,
                   ),
                 ),
               ],
@@ -1097,18 +1480,25 @@ class _TodayHero extends StatelessWidget {
     final theme = Theme.of(context);
     final tones = theme.extension<AcatrainTones>() ?? AcatrainTones.light;
     final totalDue = store.totalDue;
-    final set = store.bundle.sets.isEmpty
-        ? null
-        : store.bundle.sets.firstWhere(
-            (s) => store.dueCount(s) > 0,
-            orElse: () => store.bundle.sets.first,
-          );
-    final quizzes = set == null ? const <StudyItem>[] : set.items.where((i) => i.isQuiz).toList();
+    final set =
+        store.bundle.sets.isEmpty
+            ? null
+            : store.bundle.sets.firstWhere(
+              (s) => store.dueCount(s) > 0,
+              orElse: () => store.bundle.sets.first,
+            );
+    final quizzes =
+        set == null
+            ? const <StudyItem>[]
+            : set.items.where((i) => i.isQuiz).toList();
     final caughtUp = totalDue == 0;
 
-    final headline = caughtUp
-        ? "You're caught up"
-        : '$totalDue items ready to review';
+    final headline =
+        isCantonese(context)
+            ? (caughtUp ? '全部都溫習好喇' : '$totalDue 題等你溫習')
+            : (caughtUp
+                ? "You're caught up"
+                : '$totalDue items ready to review');
     final counterText = caughtUp ? '0' : '$totalDue';
 
     void handleStart() {
@@ -1145,7 +1535,7 @@ class _TodayHero extends StatelessWidget {
           if (!compact) ...[
             const SizedBox(height: 4),
             Text(
-              'due today',
+              tr(context, 'due today'),
               style: theme.textTheme.labelLarge?.copyWith(
                 color: tones.heroAccent,
                 fontWeight: acatrainWeight(650),
@@ -1161,26 +1551,34 @@ class _TodayHero extends StatelessWidget {
       children: [
         Text(
           "TODAY'S REVIEW",
-          style: theme.textTheme.labelSmall?.copyWith(color: theme.colorScheme.onPrimaryContainer),
+          style: theme.textTheme.labelSmall?.copyWith(
+            color: theme.colorScheme.onPrimaryContainer,
+          ),
         ),
         const SizedBox(height: 6),
         Text(
           headline,
-          style: (compact ? theme.textTheme.headlineMedium : theme.textTheme.headlineLarge)?.copyWith(
-            fontSize: compact ? null : 40,
-            height: compact ? null : 46 / 40,
-            letterSpacing: compact ? null : -1.2,
-            color: theme.colorScheme.onPrimaryContainer,
-          ),
+          style: (compact
+                  ? theme.textTheme.headlineMedium
+                  : theme.textTheme.headlineLarge)
+              ?.copyWith(
+                fontSize: compact ? null : 40,
+                height: compact ? null : 46 / 40,
+                letterSpacing: compact ? null : -1.2,
+                color: theme.colorScheme.onPrimaryContainer,
+              ),
         ),
         const SizedBox(height: 8),
         Text(
-          'Start with recall, then check what really stuck.',
-          style: (compact ? theme.textTheme.bodyMedium : theme.textTheme.bodyLarge)?.copyWith(
-            fontSize: compact ? 15 : 17,
-            height: compact ? 22 / 15 : 26 / 17,
-            color: tones.heroBody,
-          ),
+          tr(context, 'Start with recall, then check what really stuck.'),
+          style: (compact
+                  ? theme.textTheme.bodyMedium
+                  : theme.textTheme.bodyLarge)
+              ?.copyWith(
+                fontSize: compact ? 15 : 17,
+                height: compact ? 22 / 15 : 26 / 17,
+                color: tones.heroBody,
+              ),
         ),
       ],
     );
@@ -1192,54 +1590,57 @@ class _TodayHero extends StatelessWidget {
         foregroundColor: theme.colorScheme.onPrimary,
       ),
       icon: const Icon(Icons.play_arrow_rounded),
-      label: const Text('Start learning'),
+      label: Text(tr(context, 'Start learning')),
     );
 
-    final buttons = compact
-        ? Row(
-            children: [
-              Expanded(child: startButton),
-              if (quizzes.isNotEmpty) ...[
-                const SizedBox(width: 8),
-                Tooltip(
-                  message: 'Start a practice test',
-                  child: SizedBox(
-                    width: 56,
-                    height: 56,
-                    child: FilledButton(
-                      onPressed: () => onPracticeTest(set!, quizzes),
-                      style: FilledButton.styleFrom(
-                        backgroundColor: tones.heroAccent,
-                        foregroundColor: theme.colorScheme.onPrimaryContainer,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(AcatrainRadii.l),
+    final buttons =
+        compact
+            ? Row(
+              children: [
+                Expanded(child: startButton),
+                if (quizzes.isNotEmpty) ...[
+                  const SizedBox(width: 8),
+                  Tooltip(
+                    message: tr(context, 'Start a practice test'),
+                    child: SizedBox(
+                      width: 56,
+                      height: 56,
+                      child: FilledButton(
+                        onPressed: () => onPracticeTest(set!, quizzes),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: tones.heroAccent,
+                          foregroundColor: theme.colorScheme.onPrimaryContainer,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(
+                              AcatrainRadii.l,
+                            ),
+                          ),
+                          padding: EdgeInsets.zero,
                         ),
-                        padding: EdgeInsets.zero,
+                        child: const Icon(Icons.quiz_rounded),
                       ),
-                      child: const Icon(Icons.quiz_rounded),
                     ),
                   ),
-                ),
+                ],
               ],
-            ],
-          )
-        : Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              startButton,
-              if (quizzes.isNotEmpty)
-                FilledButton.icon(
-                  onPressed: () => onPracticeTest(set!, quizzes),
-                  style: FilledButton.styleFrom(
-                    backgroundColor: tones.heroAccent,
-                    foregroundColor: theme.colorScheme.onPrimaryContainer,
+            )
+            : Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                startButton,
+                if (quizzes.isNotEmpty)
+                  FilledButton.icon(
+                    onPressed: () => onPracticeTest(set!, quizzes),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: tones.heroAccent,
+                      foregroundColor: theme.colorScheme.onPrimaryContainer,
+                    ),
+                    icon: const Icon(Icons.quiz_rounded),
+                    label: Text(tr(context, 'Practice test')),
                   ),
-                  icon: const Icon(Icons.quiz_rounded),
-                  label: const Text('Practice test'),
-                ),
-            ],
-          );
+              ],
+            );
 
     final radius = compact ? AcatrainRadii.xlPlus : 36.0;
     if (compact) {
@@ -1281,11 +1682,7 @@ class _TodayHero extends StatelessWidget {
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                copy,
-                const SizedBox(height: 14),
-                buttons,
-              ],
+              children: [copy, const SizedBox(height: 14), buttons],
             ),
           ),
           const SizedBox(width: 32),
@@ -1310,7 +1707,7 @@ class _MetricStrip extends StatelessWidget {
         theme.colorScheme.onSecondaryContainer,
         Icons.collections_bookmark_rounded,
         '${store.bundle.sets.length}',
-        'study sets',
+        tr(context, 'study sets'),
       ),
       (
         ExpressiveShape.clover4,
@@ -1318,15 +1715,15 @@ class _MetricStrip extends StatelessWidget {
         theme.colorScheme.onTertiaryContainer,
         Icons.workspace_premium_rounded,
         '${store.mastered}',
-        'well-practised',
+        tr(context, 'well-practised'),
       ),
       (
         ExpressiveShape.flower6,
         theme.colorScheme.primaryContainer,
         theme.colorScheme.onPrimaryContainer,
         Icons.offline_pin_rounded,
-        'Ready',
-        'for offline',
+        tr(context, 'Ready'),
+        tr(context, 'for offline'),
       ),
     ];
     return Row(
@@ -1407,7 +1804,11 @@ class _MetricTile extends StatelessWidget {
 }
 
 class _TodaySetList extends StatelessWidget {
-  const _TodaySetList({required this.sets, required this.store, required this.onOpen});
+  const _TodaySetList({
+    required this.sets,
+    required this.store,
+    required this.onOpen,
+  });
   final List<StudySet> sets;
   final AppStore store;
   final ValueChanged<StudySet> onOpen;
@@ -1422,7 +1823,12 @@ class _TodaySetList extends StatelessWidget {
             child: _TodaySetRow(
               set: sets[i],
               store: store,
-              radius: segmentRadius(i, sets.length, outer: AcatrainRadii.xl, inner: 6),
+              radius: segmentRadius(
+                i,
+                sets.length,
+                outer: AcatrainRadii.xl,
+                inner: 6,
+              ),
               onTap: () => onOpen(sets[i]),
             ),
           ),
@@ -1449,7 +1855,8 @@ class _TodaySetRow extends StatelessWidget {
     final theme = Theme.of(context);
     final style = SubjectStyle.of(context, set.subject);
     final due = store.dueCount(set);
-    final progress = set.items.isEmpty ? 0.0 : store.practisedCount(set) / set.items.length;
+    final progress =
+        set.items.isEmpty ? 0.0 : store.practisedCount(set) / set.items.length;
     return AcatrainPressScale(
       child: StudySetHero(
         setId: set.id,
@@ -1496,12 +1903,25 @@ class _TodaySetRow extends StatelessWidget {
                             Flexible(
                               child: Text.rich(
                                 TextSpan(
-                                  style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                                  style: theme.textTheme.bodySmall?.copyWith(
+                                    color: theme.colorScheme.onSurfaceVariant,
+                                  ),
                                   children: [
-                                    TextSpan(text: '${set.items.length} items · '),
                                     TextSpan(
-                                      text: '$due due',
-                                      style: TextStyle(fontWeight: acatrainWeight(650), color: theme.colorScheme.onSurface),
+                                      text:
+                                          isCantonese(context)
+                                              ? '${set.items.length} 題 · '
+                                              : '${set.items.length} items · ',
+                                    ),
+                                    TextSpan(
+                                      text:
+                                          isCantonese(context)
+                                              ? '$due 題待溫習'
+                                              : '$due due',
+                                      style: TextStyle(
+                                        fontWeight: acatrainWeight(650),
+                                        color: theme.colorScheme.onSurface,
+                                      ),
                                     ),
                                   ],
                                 ),
@@ -1513,7 +1933,10 @@ class _TodaySetRow extends StatelessWidget {
                       ],
                     ),
                   ),
-                  Icon(Icons.chevron_right_rounded, color: theme.colorScheme.onSurfaceVariant),
+                  Icon(
+                    Icons.chevron_right_rounded,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
                 ],
               ),
             ),
@@ -1539,114 +1962,138 @@ class _DesktopSetGrid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => GridView.builder(
-        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: columns,
-          mainAxisSpacing: 12,
-          crossAxisSpacing: 12,
-          mainAxisExtent: 212,
-        ),
-        itemCount: sets.length,
-        shrinkWrap: true,
-        physics: const NeverScrollableScrollPhysics(),
-        itemBuilder: (context, index) {
-          final set = sets[index];
-          final theme = Theme.of(context);
-          final style = SubjectStyle.of(context, set.subject);
-          final due = store.dueCount(set);
-          final progress = set.items.isEmpty ? 0.0 : store.practisedCount(set) / set.items.length;
-          return AcatrainPressScale(
-            child: StudySetHero(
-              setId: set.id,
-              child: Material(
-                color: theme.colorScheme.surfaceContainerLow,
-                borderRadius: BorderRadius.circular(AcatrainRadii.xl),
-                clipBehavior: Clip.antiAlias,
-                child: InkWell(
-                  onTap: () => onOpen(set),
-                  child: Padding(
-                    padding: const EdgeInsets.all(20),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+      crossAxisCount: columns,
+      mainAxisSpacing: 12,
+      crossAxisSpacing: 12,
+      mainAxisExtent: 212,
+    ),
+    itemCount: sets.length,
+    shrinkWrap: true,
+    physics: const NeverScrollableScrollPhysics(),
+    itemBuilder: (context, index) {
+      final set = sets[index];
+      final theme = Theme.of(context);
+      final style = SubjectStyle.of(context, set.subject);
+      final due = store.dueCount(set);
+      final progress =
+          set.items.isEmpty
+              ? 0.0
+              : store.practisedCount(set) / set.items.length;
+      return AcatrainPressScale(
+        child: StudySetHero(
+          setId: set.id,
+          child: Material(
+            color: theme.colorScheme.surfaceContainerLow,
+            borderRadius: BorderRadius.circular(AcatrainRadii.xl),
+            clipBehavior: Clip.antiAlias,
+            child: InkWell(
+              onTap: () => onOpen(set),
+              child: Padding(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
                       children: [
-                        Row(
-                          children: [
-                            ExpressiveBadge(
-                              shape: style.shape,
-                              size: 48,
-                              color: style.fill,
-                              child: Icon(style.icon, color: style.onFill, size: 24),
-                            ),
-                            const Spacer(),
-                            _DuePill(count: due, container: style.container, onContainer: style.onContainer),
-                          ],
-                        ),
-                        const SizedBox(height: 4),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisAlignment: MainAxisAlignment.end,
-                            children: [
-                              Text(
-                                set.subject,
-                                style: theme.textTheme.bodyMedium?.copyWith(
-                                  fontWeight: acatrainWeight(650),
-                                  color: theme.colorScheme.onSurfaceVariant,
-                                ),
-                              ),
-                              Text(
-                                set.title,
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                                style: theme.textTheme.titleLarge,
-                              ),
-                            ],
+                        ExpressiveBadge(
+                          shape: style.shape,
+                          size: 48,
+                          color: style.fill,
+                          child: Icon(
+                            style.icon,
+                            color: style.onFill,
+                            size: 24,
                           ),
                         ),
-                        const SizedBox(height: 8),
-                        WavyProgress(value: progress, color: style.fill, height: 8),
-                        const SizedBox(height: 6),
-                        Text(
-                          '${store.practisedCount(set)} of ${set.items.length} well-practised',
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: theme.colorScheme.onSurfaceVariant,
-                          ),
+                        const Spacer(),
+                        _DuePill(
+                          count: due,
+                          container: style.container,
+                          onContainer: style.onContainer,
                         ),
                       ],
                     ),
-                  ),
+                    const SizedBox(height: 4),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          Text(
+                            set.subject,
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              fontWeight: acatrainWeight(650),
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                          Text(
+                            set.title,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.titleLarge,
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    WavyProgress(value: progress, color: style.fill, height: 8),
+                    const SizedBox(height: 6),
+                    Text(
+                      isCantonese(context)
+                          ? '${store.practisedCount(set)} / ${set.items.length} 題已熟習'
+                          : '${store.practisedCount(set)} of ${set.items.length} well-practised',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
-          );
-        },
+          ),
+        ),
       );
+    },
+  );
 }
 
 class _DuePill extends StatelessWidget {
-  const _DuePill({required this.count, required this.container, required this.onContainer});
+  const _DuePill({
+    required this.count,
+    required this.container,
+    required this.onContainer,
+  });
   final int count;
   final Color container;
   final Color onContainer;
 
   @override
   Widget build(BuildContext context) => Container(
-        height: 28,
-        padding: const EdgeInsets.symmetric(horizontal: 10),
-        decoration: BoxDecoration(color: container, borderRadius: BorderRadius.circular(AcatrainRadii.l)),
-        alignment: Alignment.center,
-        child: Text(
-          '$count due',
-          style: TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.w700,
-            color: onContainer,
-          ),
-        ),
-      );
+    height: 28,
+    padding: const EdgeInsets.symmetric(horizontal: 10),
+    decoration: BoxDecoration(
+      color: container,
+      borderRadius: BorderRadius.circular(AcatrainRadii.l),
+    ),
+    alignment: Alignment.center,
+    child: Text(
+      isCantonese(context) ? '$count 題待溫習' : '$count due',
+      style: TextStyle(
+        fontSize: 12,
+        fontWeight: FontWeight.w700,
+        color: onContainer,
+      ),
+    ),
+  );
 }
 
 class _ReviewQueuePanel extends StatelessWidget {
-  const _ReviewQueuePanel({required this.store, required this.onOpenSet, required this.onStart});
+  const _ReviewQueuePanel({
+    required this.store,
+    required this.onOpenSet,
+    required this.onStart,
+  });
   final AppStore store;
   final ValueChanged<StudySet> onOpenSet;
   final void Function(StudySet, List<StudyItem>, bool) onStart;
@@ -1686,10 +2133,19 @@ class _ReviewQueuePanel extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 8),
             child: Row(
               children: [
-                Expanded(child: Text('Review queue', style: theme.textTheme.titleLarge)),
+                Expanded(
+                  child: Text(
+                    tr(context, 'Review queue'),
+                    style: theme.textTheme.titleLarge,
+                  ),
+                ),
                 Text(
-                  '${store.totalDue} due',
-                  style: theme.textTheme.labelLarge?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                  isCantonese(context)
+                      ? '${store.totalDue} 題待溫習'
+                      : '${store.totalDue} due',
+                  style: theme.textTheme.labelLarge?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
                 ),
               ],
             ),
@@ -1699,8 +2155,10 @@ class _ReviewQueuePanel extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.all(8),
               child: Text(
-                'Nothing due right now.',
-                style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                tr(context, 'Nothing due right now.'),
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
               ),
             )
           else
@@ -1708,12 +2166,19 @@ class _ReviewQueuePanel extends StatelessWidget {
               children: [
                 for (var i = 0; i < shown.length; i++)
                   Padding(
-                    padding: EdgeInsets.only(bottom: i == shown.length - 1 ? 0 : 2),
+                    padding: EdgeInsets.only(
+                      bottom: i == shown.length - 1 ? 0 : 2,
+                    ),
                     child: _ReviewQueueRow(
                       set: shown[i].$1,
                       item: shown[i].$2,
                       missed: shown[i].$3,
-                      radius: segmentRadius(i, shown.length, outer: AcatrainRadii.lPlus, inner: AcatrainRadii.xs),
+                      radius: segmentRadius(
+                        i,
+                        shown.length,
+                        outer: AcatrainRadii.lPlus,
+                        inner: AcatrainRadii.xs,
+                      ),
                       onTap: () => onOpenSet(shown[i].$1),
                     ),
                   ),
@@ -1721,12 +2186,17 @@ class _ReviewQueuePanel extends StatelessWidget {
             ),
           const SizedBox(height: 16),
           FilledButton.tonal(
-            onPressed: worstSet == null
-                ? null
-                : () {
-                    final set = worstSet!;
-                    onStart(set, set.items.where((i) => store.isWrong(set, i)).toList(), false);
-                  },
+            onPressed:
+                worstSet == null
+                    ? null
+                    : () {
+                      final set = worstSet!;
+                      onStart(
+                        set,
+                        set.items.where((i) => store.isWrong(set, i)).toList(),
+                        false,
+                      );
+                    },
             style: FilledButton.styleFrom(
               backgroundColor: theme.colorScheme.secondaryContainer,
               foregroundColor: theme.colorScheme.onSecondaryContainer,
@@ -1734,10 +2204,10 @@ class _ReviewQueuePanel extends StatelessWidget {
             ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
-              children: const [
-                Icon(Icons.replay_rounded, size: 20),
-                SizedBox(width: 8),
-                Text('Practise mistakes'),
+              children: [
+                const Icon(Icons.replay_rounded, size: 20),
+                const SizedBox(width: 8),
+                Text(tr(context, 'Practise mistakes')),
               ],
             ),
           ),
@@ -1745,11 +2215,19 @@ class _ReviewQueuePanel extends StatelessWidget {
           Row(
             children: [
               Expanded(
-                child: _ReviewStat(value: '${store.mastered}', label: 'well-practised', leading: true),
+                child: _ReviewStat(
+                  value: '${store.mastered}',
+                  label: tr(context, 'well-practised'),
+                  leading: true,
+                ),
               ),
               const SizedBox(width: 6),
               Expanded(
-                child: _ReviewStat(value: '${store.totalItems}', label: 'items offline', leading: false),
+                child: _ReviewStat(
+                  value: '${store.totalItems}',
+                  label: tr(context, 'items offline'),
+                  leading: false,
+                ),
               ),
             ],
           ),
@@ -1806,10 +2284,13 @@ class _ReviewQueueRow extends StatelessWidget {
                       style: theme.textTheme.titleSmall,
                     ),
                     Text(
-                      missed ? 'Missed' : 'Due now',
+                      tr(context, missed ? 'Missed' : 'Due now'),
                       style: theme.textTheme.bodySmall?.copyWith(
                         fontWeight: acatrainWeight(550),
-                        color: missed ? theme.colorScheme.error : theme.colorScheme.onSurfaceVariant,
+                        color:
+                            missed
+                                ? theme.colorScheme.error
+                                : theme.colorScheme.onSurfaceVariant,
                       ),
                     ),
                   ],
@@ -1824,7 +2305,11 @@ class _ReviewQueueRow extends StatelessWidget {
 }
 
 class _ReviewStat extends StatelessWidget {
-  const _ReviewStat({required this.value, required this.label, required this.leading});
+  const _ReviewStat({
+    required this.value,
+    required this.label,
+    required this.leading,
+  });
   final String value;
   final String label;
   final bool leading;
@@ -1841,8 +2326,19 @@ class _ReviewStat extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(value, style: theme.textTheme.titleLarge?.copyWith(fontSize: 26, fontWeight: acatrainWeight(750))),
-          Text(label, style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+          Text(
+            value,
+            style: theme.textTheme.titleLarge?.copyWith(
+              fontSize: 26,
+              fontWeight: acatrainWeight(750),
+            ),
+          ),
+          Text(
+            label,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
         ],
       ),
     );
@@ -1850,7 +2346,11 @@ class _ReviewStat extends StatelessWidget {
 }
 
 class _FilterChip extends StatelessWidget {
-  const _FilterChip({required this.label, required this.selected, required this.onSelected});
+  const _FilterChip({
+    required this.label,
+    required this.selected,
+    required this.onSelected,
+  });
   final String label;
   final bool selected;
   final VoidCallback onSelected;
@@ -1870,11 +2370,17 @@ class _FilterChip extends StatelessWidget {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(Icons.check_rounded, size: 18, color: theme.colorScheme.onSecondaryContainer),
+                Icon(
+                  Icons.check_rounded,
+                  size: 18,
+                  color: theme.colorScheme.onSecondaryContainer,
+                ),
                 const SizedBox(width: 6),
                 Text(
                   label,
-                  style: theme.textTheme.labelLarge?.copyWith(color: theme.colorScheme.onSecondaryContainer),
+                  style: theme.textTheme.labelLarge?.copyWith(
+                    color: theme.colorScheme.onSecondaryContainer,
+                  ),
                 ),
               ],
             ),
@@ -1909,49 +2415,66 @@ class _FilterChip extends StatelessWidget {
 }
 
 class _LibraryList extends StatelessWidget {
-  const _LibraryList({required this.sets, required this.store, required this.onOpen});
+  const _LibraryList({
+    required this.sets,
+    required this.store,
+    required this.onOpen,
+  });
   final List<StudySet> sets;
   final AppStore store;
   final ValueChanged<StudySet> onOpen;
 
   @override
   Widget build(BuildContext context) => LayoutBuilder(
-        builder: (context, constraints) {
-          final columns = constraints.maxWidth >= 1000
+    builder: (context, constraints) {
+      final columns =
+          constraints.maxWidth >= 1000
               ? 3
               : constraints.maxWidth >= 660
-                  ? 2
-                  : 1;
-          if (columns == 1) {
-            return Column(
-              children: [
-                for (var i = 0; i < sets.length; i++)
-                  Padding(
-                    padding: EdgeInsets.only(bottom: i == sets.length - 1 ? 0 : 10),
-                    child: _LibraryCard(set: sets[i], store: store, onTap: () => onOpen(sets[i])),
-                  ),
-              ],
-            );
-          }
-          return GridView.builder(
-            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: columns,
-              mainAxisSpacing: 10,
-              crossAxisSpacing: 10,
-              mainAxisExtent: 232,
+              ? 2
+              : 1;
+      if (columns == 1) {
+        return Column(
+          children: [
+            for (var i = 0; i < sets.length; i++)
+              Padding(
+                padding: EdgeInsets.only(bottom: i == sets.length - 1 ? 0 : 10),
+                child: _LibraryCard(
+                  set: sets[i],
+                  store: store,
+                  onTap: () => onOpen(sets[i]),
+                ),
+              ),
+          ],
+        );
+      }
+      return GridView.builder(
+        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: columns,
+          mainAxisSpacing: 10,
+          crossAxisSpacing: 10,
+          mainAxisExtent: 232,
+        ),
+        itemCount: sets.length,
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        itemBuilder:
+            (context, i) => _LibraryCard(
+              set: sets[i],
+              store: store,
+              onTap: () => onOpen(sets[i]),
             ),
-            itemCount: sets.length,
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            itemBuilder: (context, i) =>
-                _LibraryCard(set: sets[i], store: store, onTap: () => onOpen(sets[i])),
-          );
-        },
       );
+    },
+  );
 }
 
 class _LibraryCard extends StatelessWidget {
-  const _LibraryCard({required this.set, required this.store, required this.onTap});
+  const _LibraryCard({
+    required this.set,
+    required this.store,
+    required this.onTap,
+  });
   final StudySet set;
   final AppStore store;
   final VoidCallback onTap;
@@ -1997,28 +2520,45 @@ class _LibraryCard extends StatelessWidget {
                           ),
                         ),
                       ),
-                      _DuePill(count: due, container: style.container, onContainer: style.onContainer),
+                      _DuePill(
+                        count: due,
+                        container: style.container,
+                        onContainer: style.onContainer,
+                      ),
                     ],
                   ),
                   const SizedBox(height: 14),
                   Text(
                     set.title,
-                    style: theme.textTheme.titleLarge?.copyWith(fontSize: 22, height: 28 / 22),
+                    style: theme.textTheme.titleLarge?.copyWith(
+                      fontSize: 22,
+                      height: 28 / 22,
+                    ),
                   ),
                   const SizedBox(height: 6),
                   Text(
                     set.description,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
                   ),
                   const SizedBox(height: 12),
                   Row(
                     children: [
-                      Expanded(child: WavyProgress(value: progress, color: style.fill, height: 8)),
+                      Expanded(
+                        child: WavyProgress(
+                          value: progress,
+                          color: style.fill,
+                          height: 8,
+                        ),
+                      ),
                       const SizedBox(width: 10),
                       Text(
-                        '$practised/${set.items.length} practised',
+                        isCantonese(context)
+                            ? '$practised/${set.items.length} 題已練習'
+                            : '$practised/${set.items.length} practised',
                         style: theme.textTheme.bodySmall?.copyWith(
                           color: theme.colorScheme.onSurfaceVariant,
                           fontWeight: acatrainWeight(550),
@@ -2067,7 +2607,11 @@ class _SettingsCard extends StatelessWidget {
                   shape: ExpressiveShape.sunny,
                   size: 40,
                   color: theme.colorScheme.secondaryContainer,
-                  child: Icon(icon, color: theme.colorScheme.onSecondaryContainer, size: 20),
+                  child: Icon(
+                    icon,
+                    color: theme.colorScheme.onSecondaryContainer,
+                    size: 20,
+                  ),
                 ),
                 const SizedBox(width: 14),
                 Expanded(
@@ -2129,7 +2673,11 @@ class _EmptyState extends StatelessWidget {
             shape: ExpressiveShape.sunny,
             size: 56,
             color: theme.colorScheme.secondaryContainer,
-            child: Icon(icon, color: theme.colorScheme.onSecondaryContainer, size: 28),
+            child: Icon(
+              icon,
+              color: theme.colorScheme.onSecondaryContainer,
+              size: 28,
+            ),
           ),
           const SizedBox(height: 16),
           Text(title, style: theme.textTheme.titleLarge),
@@ -2174,7 +2722,10 @@ class _AuthSheetState extends State<_AuthSheet> {
     super.dispose();
   }
 
-  Future<void> _run(Future<bool> Function() action, {bool close = false}) async {
+  Future<void> _run(
+    Future<bool> Function() action, {
+    bool close = false,
+  }) async {
     setState(() {
       _submitting = true;
       _error = null;
@@ -2192,41 +2743,39 @@ class _AuthSheetState extends State<_AuthSheet> {
         _notice = widget.store.status;
       } else {
         _error = widget.store.status;
+        if (_error!.contains('password account') ||
+            _error!.contains('with its password')) {
+          _creating = false;
+          _passwordless = false;
+          if (_email.text.isEmpty && widget.store.pendingGoogleEmail != null) {
+            _email.text = widget.store.pendingGoogleEmail!;
+          }
+        }
       }
     });
   }
 
   Future<void> _submitPassword() => _run(
-        () => widget.store.signIn(
-          _email.text,
-          _password.text,
-          register: _creating,
-        ),
-        close: true,
-      );
+    () => widget.store.signIn(_email.text, _password.text, register: _creating),
+    close: true,
+  );
 
   Future<void> _sendLink() => _run(() async {
-        final ok = await widget.store.sendEmailSignInLink(_email.text);
-        if (ok && mounted) setState(() => _linkSent = true);
-        return ok;
-      });
+    final ok = await widget.store.sendEmailSignInLink(_email.text);
+    if (ok && mounted) setState(() => _linkSent = true);
+    return ok;
+  });
 
   Future<void> _finishLink() => _run(
-        () => widget.store.signInWithEmailLink(
-          _email.text,
-          _emailLink.text,
-        ),
-        close: true,
-      );
+    () => widget.store.signInWithEmailLink(_email.text, _emailLink.text),
+    close: true,
+  );
 
-  Future<void> _resetPassword() => _run(
-        () => widget.store.sendPasswordReset(_email.text),
-      );
+  Future<void> _resetPassword() =>
+      _run(() => widget.store.sendPasswordReset(_email.text));
 
-  Future<void> _signInGoogle() => _run(
-        widget.store.signInWithGoogle,
-        close: true,
-      );
+  Future<void> _signInGoogle() =>
+      _run(widget.store.signInWithGoogle, close: true);
 
   @override
   Widget build(BuildContext context) {
@@ -2238,130 +2787,141 @@ class _AuthSheetState extends State<_AuthSheet> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            _passwordless
-                ? 'Sign in without a password'
-                : _creating
-                    ? 'Create your account'
-                    : 'Welcome back',
+            tr(
+              context,
+              _passwordless
+                  ? 'Sign in without a password'
+                  : _creating
+                  ? 'Create your account'
+                  : 'Welcome back',
+            ),
             style: theme.textTheme.headlineSmall,
           ),
           const SizedBox(height: 8),
           Text(
-            _passwordless
-                ? 'We can send a one-time Firebase email link. On desktop/mobile you can paste the full link back here.'
-                : 'Your cloud account only exists to sync learning progress across devices.',
+            tr(
+              context,
+              _passwordless
+                  ? 'We can send a one-time Firebase email link. On desktop/mobile you can paste the full link back here.'
+                  : 'Your cloud account only exists to sync learning progress across devices.',
+            ),
             style: theme.textTheme.bodyMedium?.copyWith(
               color: theme.colorScheme.onSurfaceVariant,
             ),
           ),
           const SizedBox(height: 22),
-          if (!kIsWeb &&
-              (defaultTargetPlatform == TargetPlatform.android ||
-                  defaultTargetPlatform == TargetPlatform.iOS)) ...[
-            OutlinedButton.icon(
-              onPressed: _submitting ? null : _signInGoogle,
-              icon: const Icon(Icons.account_circle_outlined),
-              label: const Text('Continue with Google'),
-            ),
-            const SizedBox(height: 16),
-            const Row(
-              children: [
-                Expanded(child: Divider()),
-                Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 12),
-                  child: Text('or use email'),
-                ),
-                Expanded(child: Divider()),
-              ],
-            ),
-            const SizedBox(height: 16),
-          ],
+          OutlinedButton.icon(
+            onPressed: _submitting ? null : _signInGoogle,
+            icon: const Icon(Icons.account_circle_outlined),
+            label: Text(tr(context, 'Continue with Google')),
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              const Expanded(child: Divider()),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                child: Text(tr(context, 'or use email')),
+              ),
+              const Expanded(child: Divider()),
+            ],
+          ),
+          const SizedBox(height: 16),
           TextField(
             controller: _email,
             enabled: !_submitting,
             keyboardType: TextInputType.emailAddress,
             autofillHints: const [AutofillHints.email],
-            decoration: const InputDecoration(
-              labelText: 'Email',
-              prefixIcon: Icon(Icons.mail_outline_rounded),
+            decoration: InputDecoration(
+              labelText: tr(context, 'Email'),
+              prefixIcon: const Icon(Icons.mail_outline_rounded),
             ),
           ),
           const SizedBox(height: 12),
           AnimatedSwitcher(
             duration: acatrainFastMotion,
-            child: _passwordless
-                ? Column(
-                    key: const ValueKey('link-auth'),
-                    children: [
-                      if (_linkSent) ...[
+            child:
+                _passwordless
+                    ? Column(
+                      key: const ValueKey('link-auth'),
+                      children: [
+                        if (_linkSent) ...[
+                          TextField(
+                            controller: _emailLink,
+                            enabled: !_submitting,
+                            decoration: InputDecoration(
+                              labelText: tr(context, 'Email link or oobCode'),
+                              prefixIcon: const Icon(Icons.link_rounded),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                        ],
+                        FilledButton.icon(
+                          onPressed:
+                              _submitting
+                                  ? null
+                                  : _linkSent
+                                  ? _finishLink
+                                  : _sendLink,
+                          icon: Icon(
+                            _linkSent
+                                ? Icons.login_rounded
+                                : Icons.send_outlined,
+                          ),
+                          label: Text(
+                            tr(
+                              context,
+                              _linkSent
+                                  ? 'Complete sign in'
+                                  : 'Send sign-in link',
+                            ),
+                          ),
+                        ),
+                      ],
+                    )
+                    : Column(
+                      key: const ValueKey('password-auth'),
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
                         TextField(
-                          controller: _emailLink,
+                          controller: _password,
                           enabled: !_submitting,
-                          decoration: const InputDecoration(
-                            labelText: 'Email link or oobCode',
-                            prefixIcon: Icon(Icons.link_rounded),
+                          obscureText: true,
+                          enableSuggestions: false,
+                          autocorrect: false,
+                          autofillHints:
+                              _creating
+                                  ? const [AutofillHints.newPassword]
+                                  : const [AutofillHints.password],
+                          decoration: InputDecoration(
+                            labelText: tr(context, 'Password'),
+                            prefixIcon: const Icon(Icons.lock_outline_rounded),
                           ),
                         ),
                         const SizedBox(height: 12),
-                      ],
-                      FilledButton.icon(
-                        onPressed: _submitting
-                            ? null
-                            : _linkSent
-                                ? _finishLink
-                                : _sendLink,
-                        icon: Icon(
-                          _linkSent
-                              ? Icons.login_rounded
-                              : Icons.send_outlined,
-                        ),
-                        label: Text(
-                          _linkSent
-                              ? 'Complete sign in'
-                              : 'Send sign-in link',
-                        ),
-                      ),
-                    ],
-                  )
-                : Column(
-                    key: const ValueKey('password-auth'),
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      TextField(
-                        controller: _password,
-                        enabled: !_submitting,
-                        obscureText: true,
-                        enableSuggestions: false,
-                        autocorrect: false,
-                        autofillHints: _creating
-                            ? const [AutofillHints.newPassword]
-                            : const [AutofillHints.password],
-                        decoration: const InputDecoration(
-                          labelText: 'Password',
-                          prefixIcon: Icon(Icons.lock_outline_rounded),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      FilledButton(
-                        onPressed: _submitting ? null : _submitPassword,
-                        child: Text(
-                          _submitting
-                              ? 'Connecting...'
-                              : _creating
+                        FilledButton(
+                          onPressed: _submitting ? null : _submitPassword,
+                          child: Text(
+                            tr(
+                              context,
+                              _submitting
+                                  ? 'Connecting...'
+                                  : _creating
                                   ? 'Create account'
                                   : 'Sign in',
-                        ),
-                      ),
-                      if (!_creating)
-                        Align(
-                          alignment: Alignment.centerLeft,
-                          child: TextButton(
-                            onPressed: _submitting ? null : _resetPassword,
-                            child: const Text('Forgot password?'),
+                            ),
                           ),
                         ),
-                    ],
-                  ),
+                        if (!_creating)
+                          Align(
+                            alignment: Alignment.centerLeft,
+                            child: TextButton(
+                              onPressed: _submitting ? null : _resetPassword,
+                              child: Text(tr(context, 'Forgot password?')),
+                            ),
+                          ),
+                      ],
+                    ),
           ),
           if (_notice != null) ...[
             const SizedBox(height: 12),
@@ -2380,21 +2940,22 @@ class _AuthSheetState extends State<_AuthSheet> {
             ),
           ],
           const SizedBox(height: 16),
-          const Row(
+          Row(
             children: [
-              Expanded(child: Divider()),
+              const Expanded(child: Divider()),
               Padding(
-                padding: EdgeInsets.symmetric(horizontal: 12),
-                child: Text('or'),
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                child: Text(tr(context, 'or')),
               ),
-              Expanded(child: Divider()),
+              const Expanded(child: Divider()),
             ],
           ),
           const SizedBox(height: 12),
           OutlinedButton.icon(
-            onPressed: _submitting
-                ? null
-                : () => setState(() {
+            onPressed:
+                _submitting
+                    ? null
+                    : () => setState(() {
                       _passwordless = !_passwordless;
                       _error = null;
                       _notice = null;
@@ -2405,29 +2966,29 @@ class _AuthSheetState extends State<_AuthSheet> {
                   : Icons.mark_email_unread_outlined,
             ),
             label: Text(
-              _passwordless
-                  ? 'Use email and password'
-                  : 'Use passwordless email link',
+              tr(
+                context,
+                _passwordless
+                    ? 'Use email and password'
+                    : 'Use passwordless email link',
+              ),
             ),
           ),
           if (!_passwordless)
             TextButton(
-              onPressed: _submitting
-                  ? null
-                  : () => setState(() => _creating = !_creating),
+              onPressed:
+                  _submitting
+                      ? null
+                      : () => setState(() => _creating = !_creating),
               child: Text(
-                _creating
-                    ? 'Already have an account? Sign in'
-                    : 'New to Acatrain? Create an account',
+                tr(
+                  context,
+                  _creating
+                      ? 'Already have an account? Sign in'
+                      : 'New to Acatrain? Create an account',
+                ),
               ),
             ),
-          const SizedBox(height: 8),
-          Text(
-            'Google sign-in is available on Android and iOS. Apple and GitHub sign-in still require provider-specific setup.',
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
         ],
       ),
     );
@@ -2446,18 +3007,18 @@ class _AuthMessage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Container(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: color,
-          borderRadius: BorderRadius.circular(AcatrainRadii.l),
-        ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(icon, size: 20),
-            const SizedBox(width: 10),
-            Expanded(child: Text(text)),
-          ],
-        ),
-      );
+    padding: const EdgeInsets.all(14),
+    decoration: BoxDecoration(
+      color: color,
+      borderRadius: BorderRadius.circular(AcatrainRadii.l),
+    ),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, size: 20),
+        const SizedBox(width: 10),
+        Expanded(child: Text(tr(context, text))),
+      ],
+    ),
+  );
 }
