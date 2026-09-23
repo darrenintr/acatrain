@@ -54,6 +54,15 @@ class AppStore extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// The demo subscription tier: 'free', 'starter', 'pro' or 'max'. Nothing
+  /// is ever charged; the tier only unlocks a themed look on this device.
+  String get plan => prefs.getString('demo-plan') ?? 'free';
+
+  Future<void> setPlan(String value) async {
+    await prefs.setString('demo-plan', value);
+    notifyListeners();
+  }
+
   String get _progressKey => 'progress:${uid ?? 'guest'}';
 
   Uri _uri(String path) {
