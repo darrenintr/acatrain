@@ -117,6 +117,53 @@ Path buildExpressiveShapePath(ExpressiveShape shape, Rect rect) {
   return path;
 }
 
+/// Normalised polar radius of [shape] at [theta] (outer radius = 1).
+double expressiveShapeRadius(ExpressiveShape shape, double theta) {
+  final (n, a) = shape._params;
+  return (1 + a * math.cos(n * theta)) / (1 + a);
+}
+
+/// Smallest normalised radius of [shape] (its "valley" depth), handy when
+/// a shape has to fully cover a rect.
+double expressiveShapeInnerRadius(ExpressiveShape shape) {
+  final (_, a) = shape._params;
+  return (1 - a) / (1 + a);
+}
+
+/// A path part-way between two expressive shapes. Every shape is sampled
+/// on the same polar grid, so morphing is a per-angle radius lerp. [t] may
+/// overshoot `[0, 1]` slightly for spring-driven morphs; [rotation] is in
+/// radians, clockwise.
+Path buildExpressiveMorphPath(
+  ExpressiveShape from,
+  ExpressiveShape to,
+  double t,
+  Rect rect, {
+  double rotation = 0,
+}) {
+  final center = rect.center;
+  final radius = math.min(rect.width, rect.height) / 2;
+  final path = Path();
+  for (var i = 0; i <= _expressiveShapeSamples; i++) {
+    final theta = 2 * math.pi * i / _expressiveShapeSamples;
+    final a = expressiveShapeRadius(from, theta);
+    final b = expressiveShapeRadius(to, theta);
+    final r = radius * (a + (b - a) * t);
+    final angle = theta - math.pi / 2 + rotation;
+    final point = Offset(
+      center.dx + r * math.cos(angle),
+      center.dy + r * math.sin(angle),
+    );
+    if (i == 0) {
+      path.moveTo(point.dx, point.dy);
+    } else {
+      path.lineTo(point.dx, point.dy);
+    }
+  }
+  path.close();
+  return path;
+}
+
 /// A shape-filled box with a centred child, used for the logo, subject
 /// avatars, metric icon plates and the hero/complete-screen counts.
 class ExpressiveBadge extends StatelessWidget {
