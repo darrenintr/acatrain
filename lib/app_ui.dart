@@ -34,6 +34,89 @@ const acatrainFastMotion = Duration(milliseconds: 180);
 const acatrainMediumMotion = Duration(milliseconds: 320);
 const acatrainHeroMotion = Duration(milliseconds: 420);
 
+/// Nearest standard [FontWeight] for a Material 3 Expressive variable
+/// weight (e.g. 550, 650, 750) that `FontWeight` itself doesn't have a
+/// named constant for.
+FontWeight acatrainWeight(double weight) {
+  const steps = [100, 200, 300, 400, 500, 600, 700, 800, 900];
+  final nearest =
+      steps.reduce((a, b) => (weight - a).abs() < (weight - b).abs() ? a : b);
+  return FontWeight.values[(nearest ~/ 100) - 1];
+}
+
+/// The Material 3 Expressive shape scale, in dp.
+abstract final class AcatrainRadii {
+  static const xs = 4.0;
+  static const s = 8.0;
+  static const m = 12.0;
+  static const l = 16.0;
+  static const lPlus = 20.0;
+  static const xl = 28.0;
+  static const xlPlus = 32.0;
+  static const xxl = 48.0;
+  static const full = 999.0;
+}
+
+/// Corner radii for one row of a segmented (grouped) list: large outer
+/// corners, small inner corners, per the Material 3 Expressive list style.
+BorderRadius segmentRadius(
+  int index,
+  int count, {
+  double outer = AcatrainRadii.lPlus,
+  double inner = AcatrainRadii.xs,
+}) {
+  if (count <= 1) return BorderRadius.circular(outer);
+  final outerR = Radius.circular(outer);
+  final innerR = Radius.circular(inner);
+  if (index == 0) {
+    return BorderRadius.only(
+      topLeft: outerR,
+      topRight: outerR,
+      bottomLeft: innerR,
+      bottomRight: innerR,
+    );
+  }
+  if (index == count - 1) {
+    return BorderRadius.only(
+      topLeft: innerR,
+      topRight: innerR,
+      bottomLeft: outerR,
+      bottomRight: outerR,
+    );
+  }
+  return BorderRadius.circular(inner);
+}
+
+/// Adds a subtle response while retaining the child's InkWell semantics.
+class AcatrainPressScale extends StatefulWidget {
+  const AcatrainPressScale({super.key, required this.child});
+  final Widget child;
+
+  @override
+  State<AcatrainPressScale> createState() => _AcatrainPressScaleState();
+}
+
+class _AcatrainPressScaleState extends State<AcatrainPressScale> {
+  bool _pressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final reduceMotion = MediaQuery.of(context).disableAnimations;
+    return Listener(
+      onPointerDown: (_) => setState(() => _pressed = true),
+      onPointerUp: (_) => setState(() => _pressed = false),
+      onPointerCancel: (_) => setState(() => _pressed = false),
+      child: AnimatedScale(
+        scale: reduceMotion || !_pressed ? 1 : 0.985,
+        duration: reduceMotion ? Duration.zero :
+          _pressed ? const Duration(milliseconds: 90) : const Duration(milliseconds: 300),
+        curve: _pressed ? Curves.easeOut : Curves.easeOutBack,
+        child: widget.child,
+      ),
+    );
+  }
+}
+
 String studySetHeroTag(String setId) => 'study-set:$setId';
 
 class StudySetHero extends StatelessWidget {

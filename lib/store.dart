@@ -10,6 +10,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'models.dart';
 
+enum ItemStatus { missed, due, practised, new_ }
+
 class AppStore extends ChangeNotifier {
   AppStore(
     this.prefs, {
@@ -206,6 +208,21 @@ class AppStore extends ChangeNotifier {
 
   bool isWrong(StudySet set, StudyItem item) =>
       progress[item.key(set.id)]?.wrong ?? false;
+
+  int practisedCount(StudySet set) => set.items
+      .where((item) => (progress[item.key(set.id)]?.box ?? 0) >= 3)
+      .length;
+
+  int get totalItems =>
+      bundle.sets.fold(0, (n, set) => n + set.items.length);
+
+  ItemStatus statusOf(StudySet set, StudyItem item) {
+    if (isWrong(set, item)) return ItemStatus.missed;
+    final state = progress[item.key(set.id)];
+    final due = state == null || !state.dueAt.isAfter(DateTime.now());
+    if (due) return ItemStatus.due;
+    return state.box >= 3 ? ItemStatus.practised : ItemStatus.new_;
+  }
 
   Future<void> record(StudySet set, StudyItem item, bool correct) async {
     final key = item.key(set.id);

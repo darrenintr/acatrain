@@ -8,6 +8,7 @@ import 'package:google_sign_in/google_sign_in.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'app_ui.dart';
+import 'expressive.dart';
 import 'models.dart';
 import 'store.dart';
 import 'study_page.dart';
@@ -33,6 +34,32 @@ Future<void> main() async {
   if (store.cloudConfigured) unawaited(store.syncContent());
 }
 
+const _fontFamily = 'Google Sans Flex';
+const _fontFallback = ['Figtree'];
+
+FontWeight _nearestWeight(double weight) {
+  final steps = [100, 200, 300, 400, 500, 600, 700, 800, 900];
+  final nearest =
+      steps.reduce((a, b) => (weight - a).abs() < (weight - b).abs() ? a : b);
+  return FontWeight.values[(nearest ~/ 100) - 1];
+}
+
+TextStyle _type({
+  required double size,
+  required double height,
+  required double weight,
+  double letterSpacing = 0,
+}) =>
+    TextStyle(
+      fontFamily: _fontFamily,
+      fontFamilyFallback: _fontFallback,
+      fontSize: size,
+      height: height / size,
+      fontWeight: _nearestWeight(weight),
+      fontVariations: [FontVariation('wght', weight)],
+      letterSpacing: letterSpacing,
+    );
+
 class AcatrainApp extends StatelessWidget {
   const AcatrainApp({super.key, required this.store});
   final AppStore store;
@@ -48,29 +75,97 @@ class AcatrainApp extends StatelessWidget {
       );
 
   ThemeData _theme(Brightness brightness) {
-    final colors = ColorScheme.fromSeed(
-      seedColor: const Color(0xFF426B58),
-      brightness: brightness,
+    final colors = brightness == Brightness.light
+        ? const ColorScheme(
+            brightness: Brightness.light,
+            primary: Color(0xFF36684F),
+            onPrimary: Color(0xFFFFFFFF),
+            primaryContainer: Color(0xFFB8F0CF),
+            onPrimaryContainer: Color(0xFF0E3A26),
+            secondary: Color(0xFF4E6356),
+            onSecondary: Color(0xFFFFFFFF),
+            secondaryContainer: Color(0xFFD0E8D7),
+            onSecondaryContainer: Color(0xFF0B2616),
+            tertiary: Color(0xFF3B6470),
+            onTertiary: Color(0xFFFFFFFF),
+            tertiaryContainer: Color(0xFFBFE9F8),
+            onTertiaryContainer: Color(0xFF0A3642),
+            error: Color(0xFFBA1A1A),
+            onError: Color(0xFFFFFFFF),
+            errorContainer: Color(0xFFFFDAD6),
+            onErrorContainer: Color(0xFF410002),
+            surface: Color(0xFFF6FBF4),
+            onSurface: Color(0xFF171D19),
+            surfaceContainerLowest: Color(0xFFFFFFFF),
+            surfaceContainerLow: Color(0xFFF0F5EE),
+            surfaceContainer: Color(0xFFEAEFE9),
+            surfaceContainerHigh: Color(0xFFE4EAE3),
+            surfaceContainerHighest: Color(0xFFDFE4DD),
+            onSurfaceVariant: Color(0xFF404943),
+            outline: Color(0xFF707973),
+            outlineVariant: Color(0xFFC0C9C1),
+            inverseSurface: Color(0xFF2C322E),
+            onInverseSurface: Color(0xFFEDF2EB),
+            inversePrimary: Color(0xFF9DD4B4),
+          )
+        : ColorScheme.fromSeed(
+            seedColor: const Color(0xFF426B58),
+            brightness: Brightness.dark,
+          );
+    final tones = brightness == Brightness.light
+        ? AcatrainTones.light
+        : AcatrainTones.dark(colors);
+
+    final textTheme = TextTheme(
+      displaySmall: _type(size: 36, height: 42, weight: 750, letterSpacing: -1.2),
+      headlineLarge: _type(size: 32, height: 38, weight: 750, letterSpacing: -1.0),
+      headlineMedium: _type(size: 28, height: 34, weight: 700, letterSpacing: -0.5),
+      headlineSmall: _type(size: 24, height: 30, weight: 700, letterSpacing: -0.4),
+      titleLarge: _type(size: 20, height: 26, weight: 700, letterSpacing: -0.3),
+      titleMedium: _type(size: 16, height: 22, weight: 650, letterSpacing: -0.1),
+      titleSmall: _type(size: 14, height: 20, weight: 650),
+      bodyLarge: _type(size: 16, height: 24, weight: 400),
+      bodyMedium: _type(size: 14, height: 20, weight: 400),
+      bodySmall: _type(size: 12, height: 16, weight: 400),
+      labelLarge: _type(size: 14, height: 20, weight: 650),
+      labelMedium: _type(size: 12, height: 16, weight: 600),
+      labelSmall: _type(size: 12, height: 16, weight: 700, letterSpacing: 0.8),
+    ).apply(
+      bodyColor: colors.onSurface,
+      displayColor: colors.onSurface,
     );
+
     return ThemeData(
       useMaterial3: true,
       brightness: brightness,
       colorScheme: colors,
       scaffoldBackgroundColor: colors.surface,
       visualDensity: VisualDensity.standard,
+      fontFamily: _fontFamily,
+      textTheme: textTheme,
+      extensions: [tones],
+      appBarTheme: AppBarTheme(
+        toolbarHeight: 64,
+        scrolledUnderElevation: 0,
+        backgroundColor: colors.surface,
+        surfaceTintColor: Colors.transparent,
+        foregroundColor: colors.onSurface,
+      ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: colors.surfaceContainerLow,
+        fillColor: colors.surfaceContainerHigh,
+        hintStyle: TextStyle(color: colors.onSurfaceVariant),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.circular(AcatrainRadii.full),
           borderSide: BorderSide.none,
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.circular(AcatrainRadii.full),
           borderSide: BorderSide.none,
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.circular(AcatrainRadii.full),
           borderSide: BorderSide(color: colors.primary, width: 2),
         ),
       ),
@@ -79,36 +174,51 @@ class AcatrainApp extends StatelessWidget {
         margin: EdgeInsets.zero,
         color: colors.surfaceContainerLow,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(28),
+          borderRadius: BorderRadius.circular(AcatrainRadii.xl),
         ),
       ),
       navigationBarTheme: NavigationBarThemeData(
-        height: 72,
+        height: 80,
+        elevation: 0,
         backgroundColor: colors.surfaceContainer,
+        surfaceTintColor: Colors.transparent,
+        indicatorColor: colors.secondaryContainer,
         indicatorShape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(18),
+          borderRadius: BorderRadius.circular(AcatrainRadii.l),
         ),
-      ),
-      navigationRailTheme: NavigationRailThemeData(
-        backgroundColor: colors.surface,
-        indicatorShape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(18),
-        ),
+        labelTextStyle: WidgetStateProperty.resolveWith((states) {
+          final selected = states.contains(WidgetState.selected);
+          return _type(size: 12, height: 16, weight: selected ? 700 : 550)
+              .copyWith(color: selected ? colors.onSurface : colors.onSurfaceVariant);
+        }),
+        iconTheme: WidgetStateProperty.resolveWith((states) {
+          final selected = states.contains(WidgetState.selected);
+          return IconThemeData(
+            color: selected ? colors.onSecondaryContainer : colors.onSurfaceVariant,
+          );
+        }),
       ),
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 18),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(18),
-          ),
+          shape: const StadiumBorder(),
+          minimumSize: const Size(0, 56),
+          padding: const EdgeInsets.symmetric(horizontal: 24),
+          textStyle: _type(size: 16, height: 20, weight: 650),
         ),
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 18),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(18),
-          ),
+          shape: const StadiumBorder(),
+          minimumSize: const Size(0, 56),
+          padding: const EdgeInsets.symmetric(horizontal: 24),
+          textStyle: _type(size: 16, height: 20, weight: 650),
+          side: BorderSide(color: colors.outlineVariant),
+        ),
+      ),
+      textButtonTheme: TextButtonThemeData(
+        style: TextButton.styleFrom(
+          shape: const StadiumBorder(),
+          textStyle: _type(size: 14, height: 20, weight: 650),
         ),
       ),
       pageTransitionsTheme: const PageTransitionsTheme(
@@ -124,6 +234,17 @@ class AcatrainApp extends StatelessWidget {
   }
 }
 
+const _weekdays = [
+  'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'
+];
+const _months = [
+  'January', 'February', 'March', 'April', 'May', 'June', 'July', 'August',
+  'September', 'October', 'November', 'December'
+];
+
+String _formatEyebrowDate(DateTime date) =>
+    '${_weekdays[date.weekday - 1]}, ${date.day} ${_months[date.month - 1]}';
+
 class HomeShell extends StatefulWidget {
   const HomeShell({super.key, required this.store});
   final AppStore store;
@@ -136,6 +257,7 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   int _page = 0;
   String _query = '';
   String _subject = 'All';
+  bool _sortMostDue = false;
 
   AppStore get store => widget.store;
 
@@ -185,7 +307,23 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
     );
   }
 
+  void _startSession(StudySet set, List<StudyItem> items, bool quiz) {
+    Navigator.push(
+      context,
+      AcatrainPageRoute<void>(
+        builder: (_) => StudyPage(set: set, items: items, quiz: quiz, store: store),
+      ),
+    );
+  }
+
   void _selectPage(int index) => setState(() => _page = index);
+
+  void _searchLibrary(String query) {
+    setState(() {
+      _query = query;
+      _page = 1;
+    });
+  }
 
   @override
   Widget build(BuildContext context) => AnimatedBuilder(
@@ -193,67 +331,11 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
         builder: (context, _) {
           final windowClass = AcatrainLayout.classOf(context);
           final useRail = windowClass != AcatrainWindowClass.compact;
-          final extendedRail =
-              windowClass == AcatrainWindowClass.expanded &&
-                  MediaQuery.sizeOf(context).width >= 1180;
+          final expanded = windowClass == AcatrainWindowClass.expanded;
           final theme = Theme.of(context);
+          final reduceMotion = MediaQuery.of(context).disableAnimations;
           return Scaffold(
-            appBar: AppBar(
-              scrolledUnderElevation: 0,
-              titleSpacing: useRail ? 24 : 20,
-              title: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    width: 34,
-                    height: 34,
-                    decoration: BoxDecoration(
-                      color: theme.colorScheme.primary,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    alignment: Alignment.center,
-                    child: Icon(
-                      Icons.auto_awesome_rounded,
-                      size: 19,
-                      color: theme.colorScheme.onPrimary,
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Text(
-                    'acatrain',
-                    style: theme.textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: -0.6,
-                    ),
-                  ),
-                ],
-              ),
-              actions: [
-                if (store.uid != null)
-                  Padding(
-                    padding: const EdgeInsets.only(right: 4),
-                    child: Tooltip(
-                      message: store.email ?? 'Signed in',
-                      child: CircleAvatar(
-                        radius: 16,
-                        backgroundColor: theme.colorScheme.secondaryContainer,
-                        child: Text(
-                          (store.email?.isNotEmpty ?? false)
-                              ? store.email![0].toUpperCase()
-                              : 'A',
-                          style: theme.textTheme.labelLarge,
-                        ),
-                      ),
-                    ),
-                  ),
-                IconButton(
-                  tooltip: 'Sync content',
-                  onPressed: store.busy ? null : store.syncContent,
-                  icon: const Icon(Icons.sync_rounded),
-                ),
-                const SizedBox(width: 10),
-              ],
-            ),
+            appBar: expanded ? null : _appBar(theme),
             body: Column(
               children: [
                 AnimatedSwitcher(
@@ -272,46 +354,32 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
                   child: Row(
                     children: [
                       if (useRail)
-                        NavigationRail(
-                          extended: extendedRail,
+                        _ExpressiveRail(
                           selectedIndex: _page,
-                          groupAlignment: -0.72,
-                          labelType: extendedRail
-                              ? NavigationRailLabelType.none
-                              : NavigationRailLabelType.all,
-                          onDestinationSelected: _selectPage,
-                          destinations: List.generate(
-                            _labels.length,
-                            (i) => NavigationRailDestination(
-                              icon: Icon(_icons[i]),
-                              selectedIcon: Icon(_selectedIcons[i]),
-                              label: Text(_labels[i]),
-                            ),
-                          ),
-                        ),
-                      if (useRail)
-                        VerticalDivider(
-                          width: 1,
-                          color: theme.colorScheme.outlineVariant
-                              .withValues(alpha: 0.5),
+                          onSelected: _selectPage,
+                          labels: _labels,
+                          icons: _icons,
+                          selectedIcons: _selectedIcons,
                         ),
                       Expanded(
                         child: Align(
                           alignment: Alignment.topCenter,
                           child: ConstrainedBox(
                             constraints: BoxConstraints(
-                              maxWidth:
-                                  AcatrainLayout.maxContentWidth(context),
+                              maxWidth: AcatrainLayout.maxContentWidth(context),
                             ),
                             child: AnimatedSwitcher(
-                              duration: acatrainMediumMotion,
+                              duration: reduceMotion ? Duration.zero : acatrainMediumMotion,
                               switchInCurve: Curves.easeOutCubic,
                               switchOutCurve: Curves.easeInCubic,
                               transitionBuilder: (child, animation) {
                                 final slide = Tween<Offset>(
-                                  begin: const Offset(0.015, 0),
+                                  begin: const Offset(0.025, 0),
                                   end: Offset.zero,
-                                ).animate(animation);
+                                ).animate(CurvedAnimation(
+                                  parent: animation,
+                                  curve: Curves.easeOutBack,
+                                ));
                                 return FadeTransition(
                                   opacity: animation,
                                   child: SlideTransition(
@@ -323,10 +391,10 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
                               child: KeyedSubtree(
                                 key: ValueKey(_page),
                                 child: switch (_page) {
-                                  0 => _today(theme),
-                                  1 => _library(theme),
-                                  2 => _review(theme),
-                                  _ => _settings(theme),
+                                  0 => expanded ? _todayExpanded(theme) : _today(theme),
+                                  1 => _library(theme, expanded: expanded),
+                                  2 => _review(theme, expanded: expanded),
+                                  _ => _settings(theme, expanded: expanded),
                                 },
                               ),
                             ),
@@ -356,34 +424,142 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
         },
       );
 
+  PreferredSizeWidget _appBar(ThemeData theme) => AppBar(
+        titleSpacing: 20,
+        title: _page == 0
+            ? Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  ExpressiveBadge(
+                    shape: ExpressiveShape.cookie9,
+                    size: 34,
+                    color: theme.colorScheme.primary,
+                    child: Icon(
+                      Icons.school_rounded,
+                      size: 17,
+                      color: theme.colorScheme.onPrimary,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Text(
+                    'acatrain',
+                    style: theme.textTheme.titleLarge?.copyWith(
+                      fontSize: 22,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -0.6,
+                    ),
+                  ),
+                ],
+              )
+            : null,
+        actions: _appBarActions(theme),
+      );
+
+  List<Widget> _appBarActions(ThemeData theme) => [
+        IconButton(
+          tooltip: 'Sync content',
+          onPressed: store.busy ? null : store.syncContent,
+          icon: const Icon(Icons.sync_rounded),
+        ),
+        Padding(
+          padding: const EdgeInsets.only(left: 4, right: 12),
+          child: Tooltip(
+            message: store.uid != null
+                ? (store.email ?? 'Signed in')
+                : 'Guest',
+            child: CircleAvatar(
+              radius: 16,
+              backgroundColor: theme.colorScheme.tertiaryContainer,
+              child: Text(
+                (store.email?.isNotEmpty ?? false) ? store.email![0].toUpperCase() : 'A',
+                style: theme.textTheme.labelLarge?.copyWith(
+                  color: theme.colorScheme.onTertiaryContainer,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ];
+
+  Widget _pageHeader(ThemeData theme, String title, {String? eyebrow}) => Padding(
+        padding: const EdgeInsets.fromLTRB(8, 0, 0, 8),
+        child: SizedBox(
+          height: 88,
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (eyebrow != null)
+                      Text(
+                        eyebrow,
+                        style: theme.textTheme.labelLarge?.copyWith(
+                          fontWeight: FontWeight.w600,
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    Text(
+                      title,
+                      style: theme.textTheme.headlineLarge,
+                    ),
+                  ],
+                ),
+              ),
+              ..._appBarActions(theme),
+            ],
+          ),
+        ),
+      );
+
   Widget _today(ThemeData theme) {
     final padding = AcatrainLayout.pagePadding(context);
     return ListView(
       padding: padding,
       children: [
-        const SizedBox(height: 8),
+        const SizedBox(height: 4),
         Text(
-          'Make room for learning.',
-          style: theme.textTheme.displaySmall?.copyWith(
-            fontWeight: FontWeight.w700,
-            letterSpacing: -1.4,
-          ),
-        ),
-        const SizedBox(height: 10),
-        Text(
-          'Small sessions. Clear progress. Your own pace.',
-          style: theme.textTheme.bodyLarge?.copyWith(
+          _formatEyebrowDate(DateTime.now()),
+          style: theme.textTheme.bodyMedium?.copyWith(
+            fontWeight: FontWeight.w600,
             color: theme.colorScheme.onSurfaceVariant,
           ),
         ),
-        const SizedBox(height: 28),
-        _TodayHero(store: store, onOpen: _open),
-        const SizedBox(height: 18),
+        const SizedBox(height: 2),
+        Text(
+          'Make room\nfor learning.',
+          style: theme.textTheme.displaySmall,
+        ),
+        const SizedBox(height: 20),
+        _TodayHero(
+          store: store,
+          compact: true,
+          onOpen: _open,
+          onStart: (set, items) => _startSession(set, items, false),
+          onPracticeTest: (set, items) => _startSession(set, items, true),
+        ),
+        const SizedBox(height: 8),
         _MetricStrip(store: store),
-        const SizedBox(height: 32),
-        _sectionHeader(theme, 'Your study sets', store.bundle.sets.length),
-        const SizedBox(height: 14),
-        _grid(store.bundle.sets),
+        const SizedBox(height: 28),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(4, 0, 4, 12),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Your study sets',
+                  style: theme.textTheme.titleLarge,
+                ),
+              ),
+              TextButton(
+                onPressed: () => setState(() => _page = 1),
+                child: const Text('See all'),
+              ),
+            ],
+          ),
+        ),
+        _TodaySetList(sets: store.bundle.sets, store: store, onOpen: _open),
         const SizedBox(height: 24),
         Text(
           store.status,
@@ -395,13 +571,106 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
     );
   }
 
-  Widget _library(ThemeData theme) {
+  Widget _todayExpanded(ThemeData theme) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(8, 0, 32, 40),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            height: 88,
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        _formatEyebrowDate(DateTime.now()),
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          fontWeight: FontWeight.w600,
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                      Text('Make room for learning.', style: theme.textTheme.headlineLarge),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 16),
+                SizedBox(
+                  width: 320,
+                  height: 56,
+                  child: TextField(
+                    textInputAction: TextInputAction.search,
+                    decoration: const InputDecoration(
+                      prefixIcon: Icon(Icons.search_rounded),
+                      hintText: 'Search study sets',
+                    ),
+                    onSubmitted: _searchLibrary,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                ..._appBarActions(theme),
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
+          Expanded(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: SingleChildScrollView(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _TodayHero(
+                          store: store,
+                          compact: false,
+                          onOpen: _open,
+                          onStart: (set, items) => _startSession(set, items, false),
+                          onPracticeTest: (set, items) => _startSession(set, items, true),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(4, 28, 4, 14),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Text('Your study sets', style: theme.textTheme.titleLarge?.copyWith(fontSize: 22)),
+                              ),
+                              TextButton(
+                                onPressed: () => setState(() => _page = 1),
+                                child: const Text('Open library'),
+                              ),
+                            ],
+                          ),
+                        ),
+                        _DesktopSetGrid(sets: store.bundle.sets, store: store, onOpen: _open, columns: 3),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 24),
+                SizedBox(
+                  width: 340,
+                  child: _ReviewQueuePanel(store: store, onOpenSet: _open, onStart: _startSession),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _library(ThemeData theme, {required bool expanded}) {
     final subjects = [
       'All',
       ...store.bundle.sets.map((s) => s.subject).toSet(),
     ];
     final filter = subjects.contains(_subject) ? _subject : 'All';
-    final sets = store.bundle.sets
+    var sets = store.bundle.sets
         .where(
           (s) =>
               (filter == 'All' || s.subject == filter) &&
@@ -410,52 +679,80 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
                   .contains(_query.toLowerCase()),
         )
         .toList();
+    if (_sortMostDue) {
+      sets = [...sets]..sort((a, b) => store.dueCount(b).compareTo(store.dueCount(a)));
+    }
+    final totalItems = sets.fold<int>(0, (n, s) => n + s.items.length);
     return ListView(
       padding: AcatrainLayout.pagePadding(context),
       children: [
-        const SizedBox(height: 8),
-        Text(
-          'Library',
-          style: theme.textTheme.displaySmall?.copyWith(
-            fontWeight: FontWeight.w700,
-            letterSpacing: -1.2,
+        if (expanded) _pageHeader(theme, 'Library'),
+        if (!expanded) ...[
+          const SizedBox(height: 4),
+          Text('Library', style: theme.textTheme.displaySmall),
+          const SizedBox(height: 6),
+          Text(
+            'Everything you can study, organised in one place.',
+            style: theme.textTheme.bodyLarge?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
           ),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          'Everything you can study, organised in one place.',
-          style: theme.textTheme.bodyLarge?.copyWith(
-            color: theme.colorScheme.onSurfaceVariant,
-          ),
-        ),
-        const SizedBox(height: 24),
+          const SizedBox(height: 20),
+        ],
         TextField(
-          decoration: const InputDecoration(
-            prefixIcon: Icon(Icons.search_rounded),
-            hintText: 'Search your study sets',
+          decoration: InputDecoration(
+            prefixIcon: const Icon(Icons.search_rounded),
+            hintText: expanded ? 'Search study sets' : 'Search your study sets',
           ),
           onChanged: (value) => setState(() => _query = value),
         ),
-        const SizedBox(height: 18),
-        SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: Row(
-            children: subjects
-                .map(
-                  (subject) => Padding(
-                    padding: const EdgeInsets.only(right: 8),
-                    child: ChoiceChip(
-                      label: Text(subject),
-                      selected: filter == subject,
-                      onSelected: (_) =>
-                          setState(() => _subject = subject),
-                    ),
-                  ),
-                )
-                .toList(),
+        const SizedBox(height: 16),
+        SizedBox(
+          height: 36,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            itemCount: subjects.length,
+            separatorBuilder: (_, __) => const SizedBox(width: 8),
+            itemBuilder: (context, i) {
+              final subject = subjects[i];
+              return _FilterChip(
+                label: subject,
+                selected: filter == subject,
+                onSelected: () => setState(() => _subject = subject),
+              );
+            },
           ),
         ),
-        const SizedBox(height: 24),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(4, 12, 4, 12),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  '${sets.length} sets · $totalItems items',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    fontWeight: acatrainWeight(550),
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+              TextButton.icon(
+                onPressed: () => setState(() => _sortMostDue = !_sortMostDue),
+                icon: Icon(
+                  Icons.swap_vert_rounded,
+                  size: 20,
+                  color: _sortMostDue ? theme.colorScheme.primary : theme.colorScheme.onSurfaceVariant,
+                ),
+                label: Text(
+                  'Most due',
+                  style: TextStyle(
+                    color: _sortMostDue ? theme.colorScheme.primary : theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
         if (sets.isEmpty)
           _EmptyState(
             icon: Icons.search_off_rounded,
@@ -463,233 +760,135 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
             message: 'Try another keyword or subject filter.',
           )
         else
-          _grid(sets),
+          _LibraryList(sets: sets, store: store, onOpen: _open),
       ],
     );
   }
 
-  Widget _grid(List<StudySet> sets) => LayoutBuilder(
-        builder: (context, constraints) {
-          final columns = constraints.maxWidth >= 1050
-              ? 4
-              : constraints.maxWidth >= 760
-                  ? 3
-                  : constraints.maxWidth >= 500
-                      ? 2
-                      : 1;
-          final aspect = columns == 1 ? 1.85 : 1.30;
-          return GridView.builder(
-            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: columns,
-              mainAxisSpacing: 12,
-              crossAxisSpacing: 12,
-              childAspectRatio: aspect,
-            ),
-            itemCount: sets.length,
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            itemBuilder: (context, index) {
-              final set = sets[index];
-              return StudySetHero(
-                setId: set.id,
-                child: Material(
-                  color: Theme.of(context).colorScheme.surfaceContainerLow,
-                  borderRadius: BorderRadius.circular(28),
-                  clipBehavior: Clip.antiAlias,
-                  child: InkWell(
-                    onTap: () => _open(set),
-                    child: Padding(
-                      padding: const EdgeInsets.all(20),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.all(8),
-                                decoration: BoxDecoration(
-                                  color: Theme.of(context)
-                                      .colorScheme
-                                      .secondaryContainer,
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                child: const Icon(
-                                  Icons.bookmark_outline_rounded,
-                                  size: 18,
-                                ),
-                              ),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: Text(
-                                  set.subject,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style:
-                                      Theme.of(context).textTheme.labelLarge,
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 14),
-                          Expanded(
-                            child: Text(
-                              set.title,
-                              maxLines: 3,
-                              overflow: TextOverflow.ellipsis,
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .titleLarge
-                                  ?.copyWith(fontWeight: FontWeight.w600),
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            '${set.items.length} items · ${store.dueCount(set)} due',
-                            style: Theme.of(context).textTheme.bodySmall,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              );
-            },
-          );
-        },
-      );
-
-  Widget _review(ThemeData theme) => ListView(
-        padding: AcatrainLayout.pagePadding(context),
-        children: [
+  Widget _review(ThemeData theme, {required bool expanded}) {
+    final caughtUp = store.bundle.sets.every((s) => store.dueCount(s) == 0);
+    return ListView(
+      padding: AcatrainLayout.pagePadding(context),
+      children: [
+        if (expanded) _pageHeader(theme, 'Review, not relearn.'),
+        if (!expanded) ...[
+          const SizedBox(height: 4),
+          Text('Review, not relearn.', style: theme.textTheme.displaySmall),
           const SizedBox(height: 8),
-          Text(
-            'Review, not relearn.',
-            style: theme.textTheme.displaySmall?.copyWith(
-              fontWeight: FontWeight.w700,
-              letterSpacing: -1.2,
-            ),
-          ),
-          const SizedBox(height: 10),
           Text(
             'Due items rise to the top. Missed answers stay easy to revisit.',
             style: theme.textTheme.bodyLarge?.copyWith(
               color: theme.colorScheme.onSurfaceVariant,
             ),
           ),
-          const SizedBox(height: 26),
-          if (store.bundle.sets.every((s) => store.dueCount(s) == 0))
-            const _EmptyState(
-              icon: Icons.done_all_rounded,
-              title: 'You are caught up',
-              message: 'There are no review items due right now.',
-            ),
-          ...store.bundle.sets.map((set) {
-            final mistakes =
-                set.items.where((i) => store.isWrong(set, i)).toList();
-            final due = store.dueCount(set);
-            return Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(22),
-                  child: LayoutBuilder(
-                    builder: (context, constraints) {
-                      final horizontal = constraints.maxWidth >= 620;
-                      final info = Column(
+          const SizedBox(height: 22),
+        ],
+        if (caughtUp)
+          const _EmptyState(
+            icon: Icons.done_all_rounded,
+            title: 'You are caught up',
+            message: 'There are no review items due right now.',
+          ),
+        ...store.bundle.sets.map((set) {
+          final mistakes = set.items.where((i) => store.isWrong(set, i)).toList();
+          final due = store.dueCount(set);
+          final style = SubjectStyle.of(context, set.subject);
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: Card(
+              child: Padding(
+                padding: const EdgeInsets.all(20),
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final horizontal = constraints.maxWidth >= 620;
+                    final info = Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        ExpressiveBadge(
+                          shape: style.shape,
+                          size: 44,
+                          color: style.container,
+                          child: Icon(style.icon, color: style.onContainer, size: 22),
+                        ),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(set.title, style: theme.textTheme.titleMedium),
+                              const SizedBox(height: 4),
+                              Text(
+                                '$due due · ${mistakes.length} missed',
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                  color: theme.colorScheme.onSurfaceVariant,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    );
+                    final actions = Wrap(
+                      spacing: 10,
+                      runSpacing: 10,
+                      children: [
+                        FilledButton(
+                          onPressed: () => _open(set),
+                          child: const Text('Review set'),
+                        ),
+                        OutlinedButton(
+                          onPressed: mistakes.isEmpty
+                              ? null
+                              : () => _startSession(set, mistakes, false),
+                          child: const Text('Practise mistakes'),
+                        ),
+                      ],
+                    );
+                    if (!horizontal) {
+                      return Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            set.title,
-                            style: theme.textTheme.titleLarge?.copyWith(
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          const SizedBox(height: 6),
-                          Text(
-                            '$due due · ${mistakes.length} missed',
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              color: theme.colorScheme.onSurfaceVariant,
-                            ),
-                          ),
-                        ],
+                        children: [info, const SizedBox(height: 16), actions],
                       );
-                      final actions = Wrap(
-                        spacing: 10,
-                        runSpacing: 10,
-                        children: [
-                          FilledButton(
-                            onPressed: () => _open(set),
-                            child: const Text('Review set'),
-                          ),
-                          OutlinedButton(
-                            onPressed: mistakes.isEmpty
-                                ? null
-                                : () => Navigator.push(
-                                      context,
-                                      AcatrainPageRoute<void>(
-                                        builder: (_) => StudyPage(
-                                          set: set,
-                                          items: mistakes,
-                                          quiz: false,
-                                          store: store,
-                                        ),
-                                      ),
-                                    ),
-                            child: const Text('Practise mistakes'),
-                          ),
-                        ],
-                      );
-                      if (!horizontal) {
-                        return Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            info,
-                            const SizedBox(height: 18),
-                            actions,
-                          ],
-                        );
-                      }
-                      return Row(
-                        children: [
-                          Expanded(child: info),
-                          const SizedBox(width: 20),
-                          actions,
-                        ],
-                      );
-                    },
-                  ),
+                    }
+                    return Row(
+                      children: [
+                        Expanded(child: info),
+                        const SizedBox(width: 20),
+                        actions,
+                      ],
+                    );
+                  },
                 ),
               ),
-            );
-          }),
-        ],
-      );
+            ),
+          );
+        }),
+      ],
+    );
+  }
 
-  Widget _settings(ThemeData theme) => ListView(
+  Widget _settings(ThemeData theme, {required bool expanded}) => ListView(
         padding: AcatrainLayout.pagePadding(context),
         children: [
-          const SizedBox(height: 8),
-          Text(
-            'Your learning space',
-            style: theme.textTheme.displaySmall?.copyWith(
-              fontWeight: FontWeight.w700,
-              letterSpacing: -1.2,
+          if (expanded) _pageHeader(theme, 'Your learning space'),
+          if (!expanded) ...[
+            const SizedBox(height: 4),
+            Text('Your learning space', style: theme.textTheme.displaySmall),
+            const SizedBox(height: 8),
+            Text(
+              'Account, sync and content controls without getting in your way.',
+              style: theme.textTheme.bodyLarge?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
             ),
-          ),
-          const SizedBox(height: 10),
-          Text(
-            'Account, sync and content controls without getting in your way.',
-            style: theme.textTheme.bodyLarge?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
-          const SizedBox(height: 26),
+            const SizedBox(height: 22),
+          ],
           _SettingsCard(
-            icon: store.uid == null
-                ? Icons.person_outline_rounded
-                : Icons.verified_user_outlined,
+            icon: store.uid == null ? Icons.person_outline_rounded : Icons.verified_user_outlined,
             title: 'Account & progress',
             body: store.email ?? 'Guest mode. No account needed to study.',
+            footer:
+                'Guest and account progress stay separate. Acatrain never uploads guest progress automatically.',
             child: Wrap(
               spacing: 10,
               runSpacing: 10,
@@ -701,14 +900,10 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
                           ? _login
                           : store.syncProgress,
                   icon: Icon(
-                    store.uid == null
-                        ? Icons.login_rounded
-                        : Icons.cloud_sync_outlined,
+                    store.uid == null ? Icons.login_rounded : Icons.cloud_sync_outlined,
                   ),
                   label: Text(
-                    store.uid == null
-                        ? 'Sign in or create account'
-                        : 'Sync progress',
+                    store.uid == null ? 'Sign in or create account' : 'Sync progress',
                   ),
                 ),
                 if (store.uid != null)
@@ -718,8 +913,6 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
                   ),
               ],
             ),
-            footer:
-                'Guest and account progress stay separate. Acatrain never uploads guest progress automatically.',
           ),
           const SizedBox(height: 14),
           _SettingsCard(
@@ -728,13 +921,13 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
             body: store.cloudConfigured
                 ? 'Connected to your published content service.'
                 : 'Bundled demo. Cloud service is not configured.',
+            footer:
+                'Release ${store.releaseId}. Study data can update independently; renderer changes still require an app update.',
             child: OutlinedButton.icon(
               onPressed: store.busy ? null : store.syncContent,
               icon: const Icon(Icons.sync_rounded),
               label: const Text('Check for content updates'),
             ),
-            footer:
-                'Release ${store.releaseId}. Study data can update independently; renderer changes still require an app update.',
           ),
           const SizedBox(height: 14),
           _SettingsCard(
@@ -742,43 +935,24 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
             title: 'Display & motion',
             body:
                 'Animations follow the device vsync. Android requests the highest refresh mode available; other platforms use the system display timing.',
+            footer:
+                'The operating system can still lower refresh rate for battery, thermal or window-management reasons.',
             child: Text(
               '60 / 90 / 120 / 144Hz and variable-refresh displays are not artificially frame-capped by Acatrain.',
               style: theme.textTheme.bodyMedium,
             ),
-            footer:
-                'The operating system can still lower refresh rate for battery, thermal or window-management reasons.',
           ),
-          const SizedBox(height: 22),
+          const SizedBox(height: 20),
           Text(
             store.status,
             style: theme.textTheme.bodySmall?.copyWith(
               color: theme.colorScheme.onSurfaceVariant,
             ),
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 18),
           Text(
             'Acatrain 0.1.0 · Build 1\nOriginal practice material, not an official exam or marking scheme.',
             style: theme.textTheme.bodySmall,
-          ),
-        ],
-      );
-
-  Widget _sectionHeader(ThemeData theme, String title, int count) => Row(
-        children: [
-          Expanded(
-            child: Text(
-              title,
-              style: theme.textTheme.titleLarge?.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-          Text(
-            '$count',
-            style: theme.textTheme.labelLarge?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
           ),
         ],
       );
@@ -795,77 +969,328 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   }
 }
 
-class _TodayHero extends StatelessWidget {
-  const _TodayHero({required this.store, required this.onOpen});
+/// The compact expressive nav rail (96 wide): cookie9 logo, then destinations
+/// with the same pill indicator as the bottom nav bar.
+class _ExpressiveRail extends StatelessWidget {
+  const _ExpressiveRail({
+    required this.selectedIndex,
+    required this.onSelected,
+    required this.labels,
+    required this.icons,
+    required this.selectedIcons,
+  });
 
-  final AppStore store;
-  final ValueChanged<StudySet> onOpen;
+  final int selectedIndex;
+  final ValueChanged<int> onSelected;
+  final List<String> labels;
+  final List<IconData> icons;
+  final List<IconData> selectedIcons;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    return Container(
+      width: 96,
+      padding: const EdgeInsets.symmetric(vertical: 20),
+      child: Column(
+        children: [
+          ExpressiveBadge(
+            shape: ExpressiveShape.cookie9,
+            size: 44,
+            color: theme.colorScheme.primary,
+            child: Icon(
+              Icons.school_rounded,
+              size: 22,
+              color: theme.colorScheme.onPrimary,
+            ),
+          ),
+          const SizedBox(height: 28),
+          for (var i = 0; i < labels.length; i++) _RailDestination(
+            selected: selectedIndex == i,
+            icon: selectedIndex == i ? selectedIcons[i] : icons[i],
+            label: labels[i],
+            onTap: () => onSelected(i),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RailDestination extends StatelessWidget {
+  const _RailDestination({
+    required this.selected,
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  final bool selected;
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(AcatrainRadii.l),
+          child: SizedBox(
+            width: 80,
+            child: Column(
+              children: [
+                AnimatedContainer(
+                  duration: acatrainFastMotion,
+                  width: 56,
+                  height: 32,
+                  decoration: BoxDecoration(
+                    color: selected ? theme.colorScheme.secondaryContainer : Colors.transparent,
+                    borderRadius: BorderRadius.circular(AcatrainRadii.l),
+                  ),
+                  alignment: Alignment.center,
+                  child: Icon(
+                    icon,
+                    color: selected
+                        ? theme.colorScheme.onSecondaryContainer
+                        : theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  label,
+                  style: theme.textTheme.labelMedium?.copyWith(
+                    fontWeight: selected ? FontWeight.w700 : acatrainWeight(550),
+                    color: selected ? theme.colorScheme.onSurface : theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _TodayHero extends StatelessWidget {
+  const _TodayHero({
+    required this.store,
+    required this.compact,
+    required this.onOpen,
+    required this.onStart,
+    required this.onPracticeTest,
+  });
+
+  final AppStore store;
+  final bool compact;
+  final ValueChanged<StudySet> onOpen;
+  final void Function(StudySet set, List<StudyItem> items) onStart;
+  final void Function(StudySet set, List<StudyItem> items) onPracticeTest;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final tones = theme.extension<AcatrainTones>() ?? AcatrainTones.light;
+    final totalDue = store.totalDue;
     final set = store.bundle.sets.isEmpty
         ? null
         : store.bundle.sets.firstWhere(
             (s) => store.dueCount(s) > 0,
             orElse: () => store.bundle.sets.first,
           );
-    return Container(
-      padding: EdgeInsets.all(AcatrainLayout.isCompact(context) ? 22 : 30),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.primaryContainer,
-        borderRadius: BorderRadius.circular(32),
+    final quizzes = set == null ? const <StudyItem>[] : set.items.where((i) => i.isQuiz).toList();
+    final caughtUp = totalDue == 0;
+
+    final headline = caughtUp
+        ? "You're caught up"
+        : '$totalDue items ready to review';
+    final counterText = caughtUp ? '0' : '$totalDue';
+
+    void handleStart() {
+      if (set == null) return;
+      if (caughtUp) {
+        onOpen(set);
+        return;
+      }
+      final due = store.dueItems(set);
+      onStart(set, due.isNotEmpty ? due : set.items);
+    }
+
+    final badgeSize = compact ? 104.0 : 184.0;
+    final counter = ExpressiveBadge(
+      shape: ExpressiveShape.cookie9,
+      size: badgeSize,
+      color: theme.colorScheme.primary,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            counterText,
+            style: TextStyle(
+              fontFamily: _fontFamily,
+              fontFamilyFallback: _fontFallback,
+              fontSize: compact ? 40 : 64,
+              height: 1,
+              fontWeight: FontWeight.w800,
+              letterSpacing: -1.5,
+              color: theme.colorScheme.onPrimary,
+              fontFeatures: const [FontFeature.tabularFigures()],
+            ),
+          ),
+          if (!compact) ...[
+            const SizedBox(height: 4),
+            Text(
+              'due today',
+              style: theme.textTheme.labelLarge?.copyWith(
+                color: tones.heroAccent,
+                fontWeight: acatrainWeight(650),
+              ),
+            ),
+          ],
+        ],
       ),
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final horizontal = constraints.maxWidth >= 680;
-          final copy = Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+    );
+
+    final copy = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          "TODAY'S REVIEW",
+          style: theme.textTheme.labelSmall?.copyWith(color: theme.colorScheme.onPrimaryContainer),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          headline,
+          style: (compact ? theme.textTheme.headlineMedium : theme.textTheme.headlineLarge)?.copyWith(
+            fontSize: compact ? null : 40,
+            height: compact ? null : 46 / 40,
+            letterSpacing: compact ? null : -1.2,
+            color: theme.colorScheme.onPrimaryContainer,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          'Start with recall, then check what really stuck.',
+          style: (compact ? theme.textTheme.bodyMedium : theme.textTheme.bodyLarge)?.copyWith(
+            fontSize: compact ? 15 : 17,
+            height: compact ? 22 / 15 : 26 / 17,
+            color: tones.heroBody,
+          ),
+        ),
+      ],
+    );
+
+    final startButton = FilledButton.icon(
+      onPressed: set == null ? null : handleStart,
+      style: FilledButton.styleFrom(
+        backgroundColor: theme.colorScheme.primary,
+        foregroundColor: theme.colorScheme.onPrimary,
+      ),
+      icon: const Icon(Icons.play_arrow_rounded),
+      label: const Text('Start learning'),
+    );
+
+    final buttons = compact
+        ? Row(
             children: [
-              Icon(
-                Icons.auto_stories_outlined,
-                size: 38,
-                color: theme.colorScheme.onPrimaryContainer,
-              ),
-              const SizedBox(height: 18),
-              Text(
-                '${store.totalDue} items ready to review',
-                style: theme.textTheme.headlineMedium?.copyWith(
-                  fontWeight: FontWeight.w600,
-                  letterSpacing: -0.5,
+              Expanded(child: startButton),
+              if (quizzes.isNotEmpty) ...[
+                const SizedBox(width: 8),
+                Tooltip(
+                  message: 'Start a practice test',
+                  child: SizedBox(
+                    width: 56,
+                    height: 56,
+                    child: FilledButton(
+                      onPressed: () => onPracticeTest(set!, quizzes),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: tones.heroAccent,
+                        foregroundColor: theme.colorScheme.onPrimaryContainer,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(AcatrainRadii.l),
+                        ),
+                        padding: EdgeInsets.zero,
+                      ),
+                      child: const Icon(Icons.quiz_rounded),
+                    ),
+                  ),
                 ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Start with recall, then check what really stuck.',
-                style: theme.textTheme.bodyLarge,
-              ),
+              ],
+            ],
+          )
+        : Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              startButton,
+              if (quizzes.isNotEmpty)
+                FilledButton.icon(
+                  onPressed: () => onPracticeTest(set!, quizzes),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: tones.heroAccent,
+                    foregroundColor: theme.colorScheme.onPrimaryContainer,
+                  ),
+                  icon: const Icon(Icons.quiz_rounded),
+                  label: const Text('Practice test'),
+                ),
             ],
           );
-          final button = FilledButton.icon(
-            onPressed: set == null ? null : () => onOpen(set),
-            icon: const Icon(Icons.arrow_forward_rounded),
-            label: const Text('Start learning'),
-          );
-          if (!horizontal) {
-            return Column(
+
+    final radius = compact ? AcatrainRadii.xlPlus : 36.0;
+    if (compact) {
+      return Semantics(
+        container: true,
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(22, 22, 22, 24),
+          decoration: BoxDecoration(
+            color: theme.colorScheme.primaryContainer,
+            borderRadius: BorderRadius.circular(radius),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(child: copy),
+                  const SizedBox(width: 16),
+                  counter,
+                ],
+              ),
+              const SizedBox(height: 18),
+              buttons,
+            ],
+          ),
+        ),
+      );
+    }
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 36, vertical: 32),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.primaryContainer,
+        borderRadius: BorderRadius.circular(radius),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Expanded(
+            child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 copy,
-                const SizedBox(height: 22),
-                button,
+                const SizedBox(height: 14),
+                buttons,
               ],
-            );
-          }
-          return Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Expanded(child: copy),
-              const SizedBox(width: 24),
-              button,
-            ],
-          );
-        },
+            ),
+          ),
+          const SizedBox(width: 32),
+          counter,
+        ],
       ),
     );
   }
@@ -876,47 +1301,739 @@ class _MetricStrip extends StatelessWidget {
   final AppStore store;
 
   @override
-  Widget build(BuildContext context) => Wrap(
-        spacing: 10,
-        runSpacing: 10,
-        children: [
-          _MetricChip(
-            icon: Icons.collections_bookmark_outlined,
-            label: '${store.bundle.sets.length} study sets',
-          ),
-          _MetricChip(
-            icon: Icons.workspace_premium_outlined,
-            label: '${store.mastered} well-practised',
-          ),
-          const _MetricChip(
-            icon: Icons.offline_bolt_outlined,
-            label: 'Offline ready',
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final tiles = [
+      (
+        ExpressiveShape.sunny,
+        theme.colorScheme.secondaryContainer,
+        theme.colorScheme.onSecondaryContainer,
+        Icons.collections_bookmark_rounded,
+        '${store.bundle.sets.length}',
+        'study sets',
+      ),
+      (
+        ExpressiveShape.clover4,
+        theme.colorScheme.tertiaryContainer,
+        theme.colorScheme.onTertiaryContainer,
+        Icons.workspace_premium_rounded,
+        '${store.mastered}',
+        'well-practised',
+      ),
+      (
+        ExpressiveShape.flower6,
+        theme.colorScheme.primaryContainer,
+        theme.colorScheme.onPrimaryContainer,
+        Icons.offline_pin_rounded,
+        'Ready',
+        'for offline',
+      ),
+    ];
+    return Row(
+      children: [
+        for (var i = 0; i < tiles.length; i++) ...[
+          if (i > 0) const SizedBox(width: 8),
+          Expanded(
+            child: _MetricTile(
+              shape: tiles[i].$1,
+              container: tiles[i].$2,
+              onContainer: tiles[i].$3,
+              icon: tiles[i].$4,
+              value: tiles[i].$5,
+              label: tiles[i].$6,
+            ),
           ),
         ],
-      );
+      ],
+    );
+  }
 }
 
-class _MetricChip extends StatelessWidget {
-  const _MetricChip({required this.icon, required this.label});
+class _MetricTile extends StatelessWidget {
+  const _MetricTile({
+    required this.shape,
+    required this.container,
+    required this.onContainer,
+    required this.icon,
+    required this.value,
+    required this.label,
+  });
+
+  final ExpressiveShape shape;
+  final Color container;
+  final Color onContainer;
   final IconData icon;
+  final String value;
   final String label;
 
   @override
-  Widget build(BuildContext context) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.surfaceContainer,
-          borderRadius: BorderRadius.circular(18),
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 14, 14, 16),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(AcatrainRadii.lPlus),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          ExpressiveBadge(
+            shape: shape,
+            size: 32,
+            color: container,
+            child: Icon(icon, size: 18, color: onContainer),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            value,
+            style: theme.textTheme.titleLarge?.copyWith(
+              fontSize: 22,
+              height: 26 / 22,
+              fontWeight: acatrainWeight(750),
+              letterSpacing: -0.4,
+            ),
+          ),
+          Text(
+            label,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TodaySetList extends StatelessWidget {
+  const _TodaySetList({required this.sets, required this.store, required this.onOpen});
+  final List<StudySet> sets;
+  final AppStore store;
+  final ValueChanged<StudySet> onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        for (var i = 0; i < sets.length; i++)
+          Padding(
+            padding: EdgeInsets.only(bottom: i == sets.length - 1 ? 0 : 3),
+            child: _TodaySetRow(
+              set: sets[i],
+              store: store,
+              radius: segmentRadius(i, sets.length, outer: AcatrainRadii.xl, inner: 6),
+              onTap: () => onOpen(sets[i]),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _TodaySetRow extends StatelessWidget {
+  const _TodaySetRow({
+    required this.set,
+    required this.store,
+    required this.radius,
+    required this.onTap,
+  });
+
+  final StudySet set;
+  final AppStore store;
+  final BorderRadius radius;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final style = SubjectStyle.of(context, set.subject);
+    final due = store.dueCount(set);
+    final progress = set.items.isEmpty ? 0.0 : store.practisedCount(set) / set.items.length;
+    return AcatrainPressScale(
+      child: StudySetHero(
+        setId: set.id,
+        child: Material(
+          color: theme.colorScheme.surfaceContainerLow,
+          borderRadius: radius,
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: onTap,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(14, 14, 12, 14),
+              child: Row(
+                children: [
+                  ExpressiveBadge(
+                    shape: style.shape,
+                    size: 52,
+                    color: style.container,
+                    child: Icon(style.icon, color: style.onContainer, size: 24),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          set.subject,
+                          style: theme.textTheme.labelMedium?.copyWith(
+                            fontWeight: acatrainWeight(650),
+                            letterSpacing: 0.3,
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                        Text(
+                          set.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.titleMedium,
+                        ),
+                        const SizedBox(height: 4),
+                        Row(
+                          children: [
+                            AcatrainFlatBar(value: progress, color: style.fill),
+                            const SizedBox(width: 10),
+                            Flexible(
+                              child: Text.rich(
+                                TextSpan(
+                                  style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                                  children: [
+                                    TextSpan(text: '${set.items.length} items · '),
+                                    TextSpan(
+                                      text: '$due due',
+                                      style: TextStyle(fontWeight: acatrainWeight(650), color: theme.colorScheme.onSurface),
+                                    ),
+                                  ],
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  Icon(Icons.chevron_right_rounded, color: theme.colorScheme.onSurfaceVariant),
+                ],
+              ),
+            ),
+          ),
         ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 18),
-            const SizedBox(width: 8),
-            Text(label),
-          ],
+      ),
+    );
+  }
+}
+
+class _DesktopSetGrid extends StatelessWidget {
+  const _DesktopSetGrid({
+    required this.sets,
+    required this.store,
+    required this.onOpen,
+    required this.columns,
+  });
+
+  final List<StudySet> sets;
+  final AppStore store;
+  final ValueChanged<StudySet> onOpen;
+  final int columns;
+
+  @override
+  Widget build(BuildContext context) => GridView.builder(
+        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: columns,
+          mainAxisSpacing: 12,
+          crossAxisSpacing: 12,
+          mainAxisExtent: 212,
+        ),
+        itemCount: sets.length,
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        itemBuilder: (context, index) {
+          final set = sets[index];
+          final theme = Theme.of(context);
+          final style = SubjectStyle.of(context, set.subject);
+          final due = store.dueCount(set);
+          final progress = set.items.isEmpty ? 0.0 : store.practisedCount(set) / set.items.length;
+          return AcatrainPressScale(
+            child: StudySetHero(
+              setId: set.id,
+              child: Material(
+                color: theme.colorScheme.surfaceContainerLow,
+                borderRadius: BorderRadius.circular(AcatrainRadii.xl),
+                clipBehavior: Clip.antiAlias,
+                child: InkWell(
+                  onTap: () => onOpen(set),
+                  child: Padding(
+                    padding: const EdgeInsets.all(20),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            ExpressiveBadge(
+                              shape: style.shape,
+                              size: 48,
+                              color: style.fill,
+                              child: Icon(style.icon, color: style.onFill, size: 24),
+                            ),
+                            const Spacer(),
+                            _DuePill(count: due, container: style.container, onContainer: style.onContainer),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisAlignment: MainAxisAlignment.end,
+                            children: [
+                              Text(
+                                set.subject,
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                  fontWeight: acatrainWeight(650),
+                                  color: theme.colorScheme.onSurfaceVariant,
+                                ),
+                              ),
+                              Text(
+                                set.title,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: theme.textTheme.titleLarge,
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        WavyProgress(value: progress, color: style.fill, height: 8),
+                        const SizedBox(height: 6),
+                        Text(
+                          '${store.practisedCount(set)} of ${set.items.length} well-practised',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          );
+        },
+      );
+}
+
+class _DuePill extends StatelessWidget {
+  const _DuePill({required this.count, required this.container, required this.onContainer});
+  final int count;
+  final Color container;
+  final Color onContainer;
+
+  @override
+  Widget build(BuildContext context) => Container(
+        height: 28,
+        padding: const EdgeInsets.symmetric(horizontal: 10),
+        decoration: BoxDecoration(color: container, borderRadius: BorderRadius.circular(AcatrainRadii.l)),
+        alignment: Alignment.center,
+        child: Text(
+          '$count due',
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+            color: onContainer,
+          ),
         ),
       );
+}
+
+class _ReviewQueuePanel extends StatelessWidget {
+  const _ReviewQueuePanel({required this.store, required this.onOpenSet, required this.onStart});
+  final AppStore store;
+  final ValueChanged<StudySet> onOpenSet;
+  final void Function(StudySet, List<StudyItem>, bool) onStart;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final entries = <(StudySet, StudyItem, bool)>[];
+    for (final set in store.bundle.sets) {
+      for (final item in store.dueItems(set)) {
+        entries.add((set, item, store.isWrong(set, item)));
+      }
+    }
+    entries.sort((a, b) => (a.$3 == b.$3) ? 0 : (a.$3 ? -1 : 1));
+    final shown = entries.take(4).toList();
+
+    StudySet? worstSet;
+    var worstMisses = 0;
+    for (final set in store.bundle.sets) {
+      final misses = set.items.where((i) => store.isWrong(set, i)).length;
+      if (misses > worstMisses) {
+        worstMisses = misses;
+        worstSet = set;
+      }
+    }
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 24, 16, 16),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(AcatrainRadii.xlPlus),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: Row(
+              children: [
+                Expanded(child: Text('Review queue', style: theme.textTheme.titleLarge)),
+                Text(
+                  '${store.totalDue} due',
+                  style: theme.textTheme.labelLarge?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          if (shown.isEmpty)
+            Padding(
+              padding: const EdgeInsets.all(8),
+              child: Text(
+                'Nothing due right now.',
+                style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+              ),
+            )
+          else
+            Column(
+              children: [
+                for (var i = 0; i < shown.length; i++)
+                  Padding(
+                    padding: EdgeInsets.only(bottom: i == shown.length - 1 ? 0 : 2),
+                    child: _ReviewQueueRow(
+                      set: shown[i].$1,
+                      item: shown[i].$2,
+                      missed: shown[i].$3,
+                      radius: segmentRadius(i, shown.length, outer: AcatrainRadii.lPlus, inner: AcatrainRadii.xs),
+                      onTap: () => onOpenSet(shown[i].$1),
+                    ),
+                  ),
+              ],
+            ),
+          const SizedBox(height: 16),
+          FilledButton.tonal(
+            onPressed: worstSet == null
+                ? null
+                : () {
+                    final set = worstSet!;
+                    onStart(set, set.items.where((i) => store.isWrong(set, i)).toList(), false);
+                  },
+            style: FilledButton.styleFrom(
+              backgroundColor: theme.colorScheme.secondaryContainer,
+              foregroundColor: theme.colorScheme.onSecondaryContainer,
+              minimumSize: const Size(0, 48),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: const [
+                Icon(Icons.replay_rounded, size: 20),
+                SizedBox(width: 8),
+                Text('Practise mistakes'),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: _ReviewStat(value: '${store.mastered}', label: 'well-practised', leading: true),
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: _ReviewStat(value: '${store.totalItems}', label: 'items offline', leading: false),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ReviewQueueRow extends StatelessWidget {
+  const _ReviewQueueRow({
+    required this.set,
+    required this.item,
+    required this.missed,
+    required this.radius,
+    required this.onTap,
+  });
+
+  final StudySet set;
+  final StudyItem item;
+  final bool missed;
+  final BorderRadius radius;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final style = SubjectStyle.of(context, set.subject);
+    return Material(
+      color: theme.colorScheme.surfaceContainerLowest,
+      borderRadius: radius,
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          child: Row(
+            children: [
+              ExpressiveBadge(
+                shape: style.shape,
+                size: 36,
+                color: style.container,
+                child: Icon(style.icon, size: 18, color: style.onContainer),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      item.prompt,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.titleSmall,
+                    ),
+                    Text(
+                      missed ? 'Missed' : 'Due now',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        fontWeight: acatrainWeight(550),
+                        color: missed ? theme.colorScheme.error : theme.colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ReviewStat extends StatelessWidget {
+  const _ReviewStat({required this.value, required this.label, required this.leading});
+  final String value;
+  final String label;
+  final bool leading;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerLowest,
+        borderRadius: BorderRadius.circular(AcatrainRadii.lPlus),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(value, style: theme.textTheme.titleLarge?.copyWith(fontSize: 26, fontWeight: acatrainWeight(750))),
+          Text(label, style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+        ],
+      ),
+    );
+  }
+}
+
+class _FilterChip extends StatelessWidget {
+  const _FilterChip({required this.label, required this.selected, required this.onSelected});
+  final String label;
+  final bool selected;
+  final VoidCallback onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    if (selected) {
+      return Material(
+        color: theme.colorScheme.secondaryContainer,
+        borderRadius: BorderRadius.circular(AcatrainRadii.full),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onSelected,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(10, 0, 16, 0),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.check_rounded, size: 18, color: theme.colorScheme.onSecondaryContainer),
+                const SizedBox(width: 6),
+                Text(
+                  label,
+                  style: theme.textTheme.labelLarge?.copyWith(color: theme.colorScheme.onSecondaryContainer),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(AcatrainRadii.m),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onSelected,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(AcatrainRadii.m),
+            border: Border.all(color: theme.colorScheme.outlineVariant),
+          ),
+          alignment: Alignment.center,
+          child: Text(
+            label,
+            style: theme.textTheme.labelLarge?.copyWith(
+              fontWeight: FontWeight.w600,
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _LibraryList extends StatelessWidget {
+  const _LibraryList({required this.sets, required this.store, required this.onOpen});
+  final List<StudySet> sets;
+  final AppStore store;
+  final ValueChanged<StudySet> onOpen;
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+        builder: (context, constraints) {
+          final columns = constraints.maxWidth >= 1000
+              ? 3
+              : constraints.maxWidth >= 660
+                  ? 2
+                  : 1;
+          if (columns == 1) {
+            return Column(
+              children: [
+                for (var i = 0; i < sets.length; i++)
+                  Padding(
+                    padding: EdgeInsets.only(bottom: i == sets.length - 1 ? 0 : 10),
+                    child: _LibraryCard(set: sets[i], store: store, onTap: () => onOpen(sets[i])),
+                  ),
+              ],
+            );
+          }
+          return GridView.builder(
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: columns,
+              mainAxisSpacing: 10,
+              crossAxisSpacing: 10,
+              mainAxisExtent: 232,
+            ),
+            itemCount: sets.length,
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemBuilder: (context, i) =>
+                _LibraryCard(set: sets[i], store: store, onTap: () => onOpen(sets[i])),
+          );
+        },
+      );
+}
+
+class _LibraryCard extends StatelessWidget {
+  const _LibraryCard({required this.set, required this.store, required this.onTap});
+  final StudySet set;
+  final AppStore store;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final style = SubjectStyle.of(context, set.subject);
+    final due = store.dueCount(set);
+    final practised = store.practisedCount(set);
+    final progress = set.items.isEmpty ? 0.0 : practised / set.items.length;
+    return AcatrainPressScale(
+      child: StudySetHero(
+        setId: set.id,
+        child: Material(
+          color: theme.colorScheme.surfaceContainerLow,
+          borderRadius: BorderRadius.circular(AcatrainRadii.xl),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: onTap,
+            child: Padding(
+              padding: const EdgeInsets.all(18),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      ExpressiveBadge(
+                        shape: style.shape,
+                        size: 44,
+                        color: style.fill,
+                        child: Icon(style.icon, color: style.onFill, size: 22),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          set.subject,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            fontWeight: acatrainWeight(650),
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ),
+                      _DuePill(count: due, container: style.container, onContainer: style.onContainer),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  Text(
+                    set.title,
+                    style: theme.textTheme.titleLarge?.copyWith(fontSize: 22, height: 28 / 22),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    set.description,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(child: WavyProgress(value: progress, color: style.fill, height: 8)),
+                      const SizedBox(width: 10),
+                      Text(
+                        '$practised/${set.items.length} practised',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                          fontWeight: acatrainWeight(550),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class _SettingsCard extends StatelessWidget {
@@ -946,26 +2063,19 @@ class _SettingsCard extends StatelessWidget {
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: theme.colorScheme.secondaryContainer,
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  child: Icon(icon),
+                ExpressiveBadge(
+                  shape: ExpressiveShape.sunny,
+                  size: 40,
+                  color: theme.colorScheme.secondaryContainer,
+                  child: Icon(icon, color: theme.colorScheme.onSecondaryContainer, size: 20),
                 ),
                 const SizedBox(width: 14),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        title,
-                        style: theme.textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(height: 5),
+                      Text(title, style: theme.textTheme.titleLarge),
+                      const SizedBox(height: 4),
                       Text(
                         body,
                         style: theme.textTheme.bodyMedium?.copyWith(
@@ -977,9 +2087,9 @@ class _SettingsCard extends StatelessWidget {
                 ),
               ],
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 18),
             child,
-            const SizedBox(height: 16),
+            const SizedBox(height: 14),
             Text(
               footer,
               style: theme.textTheme.bodySmall?.copyWith(
@@ -1011,11 +2121,16 @@ class _EmptyState extends StatelessWidget {
       padding: const EdgeInsets.all(32),
       decoration: BoxDecoration(
         color: theme.colorScheme.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(28),
+        borderRadius: BorderRadius.circular(AcatrainRadii.xl),
       ),
       child: Column(
         children: [
-          Icon(icon, size: 42),
+          ExpressiveBadge(
+            shape: ExpressiveShape.sunny,
+            size: 56,
+            color: theme.colorScheme.secondaryContainer,
+            child: Icon(icon, color: theme.colorScheme.onSecondaryContainer, size: 28),
+          ),
           const SizedBox(height: 16),
           Text(title, style: theme.textTheme.titleLarge),
           const SizedBox(height: 6),
@@ -1128,9 +2243,7 @@ class _AuthSheetState extends State<_AuthSheet> {
                 : _creating
                     ? 'Create your account'
                     : 'Welcome back',
-            style: theme.textTheme.headlineSmall?.copyWith(
-              fontWeight: FontWeight.w700,
-            ),
+            style: theme.textTheme.headlineSmall,
           ),
           const SizedBox(height: 8),
           Text(
@@ -1336,7 +2449,7 @@ class _AuthMessage extends StatelessWidget {
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
           color: color,
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(AcatrainRadii.l),
         ),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,

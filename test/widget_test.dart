@@ -19,7 +19,7 @@ void main() {
       await tester.binding.setSurfaceSize(size);
       await tester.pumpWidget(AcatrainApp(store: state)); await tester.pumpAndSettle();
       expect(find.text('acatrain'), findsOneWidget);
-      expect(find.text('Make room for learning.'), findsOneWidget);
+      expect(find.textContaining('Make room'), findsOneWidget);
       expect(tester.takeException(), isNull);
     }
     await tester.binding.setSurfaceSize(null);
@@ -72,7 +72,8 @@ void main() {
       scrollable: find.byType(Scrollable));
     await tester.tap(find.text('Continue')); await tester.pumpAndSettle();
     expect(state.isWrong(set, item), true);
-    expect(find.text('0 / 1 correct'), findsOneWidget);
+    expect(find.text('0/1', findRichText: true), findsOneWidget);
+    expect(find.text('correct'), findsOneWidget);
     await tester.pumpWidget(const SizedBox()); state.dispose();
   });
 }
