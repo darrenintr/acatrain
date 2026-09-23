@@ -1,8 +1,10 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -335,6 +337,70 @@ class AppStore extends ChangeNotifier {
             'Signed in. Use Sync progress to merge this account across devices.';
       });
 
+  Future<bool> signInWithGoogle() => _run(() async {
+        if (kIsWeb ||
+            (defaultTargetPlatform != TargetPlatform.android &&
+                defaultTargetPlatform != TargetPlatform.iOS)) {
+          throw const FormatException(
+            'Google sign-in is currently available in the Android and iOS apps.',
+          );
+        }
+
+        GoogleSignInAccount account;
+        try {
+          account = await GoogleSignIn.instance.authenticate();
+        } on GoogleSignInException catch (error) {
+          if (error.code == GoogleSignInExceptionCode.canceled) {
+            throw const FormatException('Google sign-in was canceled.');
+          }
+          throw const FormatException(
+            'Google sign-in could not be completed. Check the app OAuth configuration.',
+          );
+        }
+
+        final googleIdToken = account.authentication.idToken;
+        if (googleIdToken == null || googleIdToken.isEmpty) {
+          throw const FormatException(
+            'Google did not return an ID token for this app.',
+          );
+        }
+        if (firebaseKey.isEmpty) {
+          throw const FormatException(
+            'Set FIREBASE_WEB_API_KEY to enable account sign in.',
+          );
+        }
+
+        final response = await client
+            .post(
+              _firebaseUri('signInWithIdp'),
+              headers: {'Content-Type': 'application/json'},
+              body: jsonEncode({
+                'requestUri': 'http://localhost',
+                'postBody': Uri(
+                  queryParameters: {
+                    'id_token': googleIdToken,
+                    'providerId': 'google.com',
+                  },
+                ).query,
+                'returnIdpCredential': true,
+                'returnSecureToken': true,
+              }),
+            )
+            .timeout(const Duration(seconds: 20));
+
+        if (response.statusCode != 200) {
+          throw _firebaseFailure(
+            response,
+            'Could not sign in with Google.',
+          );
+        }
+
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        _applySession(data, fallbackEmail: account.email);
+        status =
+            'Signed in with Google. Use Sync progress to merge progress across devices.';
+      });
+
   Future<bool> sendPasswordReset(String address) => _run(() async {
         final response = await _firebasePost('sendOobCode', {
           'requestType': 'PASSWORD_RESET',
@@ -404,6 +470,11 @@ class AppStore extends ChangeNotifier {
 
   void signOut() {
     if (busy) return;
+    if (!kIsWeb &&
+        (defaultTargetPlatform == TargetPlatform.android ||
+            defaultTargetPlatform == TargetPlatform.iOS)) {
+      unawaited(GoogleSignIn.instance.signOut());
+    }
     uid = null;
     email = null;
     _idToken = null;
