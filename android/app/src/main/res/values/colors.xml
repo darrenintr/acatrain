@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Matches the Flutter theme surface so the native splash hands off
+         seamlessly to the in-app launch animation (lib/launch_screen.dart). -->
+    <color name="launch_surface">#F6FBF4</color>
+</resources>

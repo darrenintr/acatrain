@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:acatrain/main.dart';
 import 'package:acatrain/store.dart';
@@ -32,6 +33,30 @@ void main() {
       expect(tester.takeException(), isNull);
     }
     await tester.binding.setSurfaceSize(null);
+    await tester.pumpWidget(const SizedBox());
+    state.dispose();
+  });
+  testWidgets('launch animation plays, then reveals the home screen', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    final state = AppStore(await SharedPreferences.getInstance());
+    final loading = Completer<void>();
+    await tester.pumpWidget(AcatrainApp(store: state, ready: loading.future));
+    await tester.pump(const Duration(milliseconds: 600));
+    expect(find.text('Acatrain'), findsOneWidget);
+    expect(find.textContaining('Make room'), findsNothing);
+    // Still loading after the intro: the splash keeps waiting.
+    await tester.pump(const Duration(seconds: 2));
+    expect(find.textContaining('Make room'), findsNothing);
+    loading.complete(
+      state.load(seed: File('assets/seed.json').readAsStringSync()),
+    );
+    await tester.pump();
+    await tester.pumpAndSettle();
+    expect(find.textContaining('Make room'), findsOneWidget);
+    expect(find.text('Acatrain'), findsNothing);
+    expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
     state.dispose();
   });

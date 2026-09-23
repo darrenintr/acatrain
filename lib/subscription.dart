@@ -1,10 +1,11 @@
 import 'dart:async';
 import 'dart:math' as math;
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'app_ui.dart';
+import 'demo_checkout.dart';
 import 'expressive.dart';
 import 'language.dart';
 import 'store.dart';
@@ -212,37 +213,328 @@ AcatrainTones planTones(AcatrainPlan plan, ColorScheme colors) => AcatrainTones(
 
 enum DemoPaymentMethod { googlePlay, appleIos, stripeWeb }
 
-extension on DemoPaymentMethod {
-  String get label => switch (this) {
-    DemoPaymentMethod.googlePlay => 'Google Play',
-    DemoPaymentMethod.appleIos => 'App Store (iOS)',
-    DemoPaymentMethod.stripeWeb => 'Stripe (Web)',
-  };
+enum BillingCycle { monthly, yearly }
 
-  IconData get icon => switch (this) {
-    DemoPaymentMethod.googlePlay => Icons.shop_rounded,
-    DemoPaymentMethod.appleIos => Icons.phone_iphone_rounded,
-    DemoPaymentMethod.stripeWeb => Icons.credit_card_rounded,
+extension BillingCycleDetails on BillingCycle {
+  /// "month" or "year", for "$10.00/month" style labels.
+  String get unit => this == BillingCycle.monthly ? 'month' : 'year';
+
+  /// The translatable "/ month" suffix used on plan cards.
+  String get perLabel => this == BillingCycle.monthly ? '/ month' : '/ year';
+
+  DateTime advance(DateTime from) =>
+      _addMonths(from, this == BillingCycle.monthly ? 1 : 12);
+}
+
+DateTime _addMonths(DateTime date, int months) {
+  final index = date.month - 1 + months;
+  final year = date.year + index ~/ 12;
+  final month = index % 12 + 1;
+  final lastDay = DateTime(year, month + 1, 0).day;
+  return DateTime(
+    year,
+    month,
+    math.min(date.day, lastDay),
+    date.hour,
+    date.minute,
+    date.second,
+  );
+}
+
+extension AcatrainPlanPricing on AcatrainPlan {
+  /// Yearly billing is ten months' price: two months free.
+  int priceCents(BillingCycle cycle) =>
+      price * 100 * (cycle == BillingCycle.yearly ? 10 : 1);
+}
+
+String formatMoney(int cents) {
+  final dollars = (cents ~/ 100).toString().replaceAllMapped(
+    RegExp(r'\B(?=(\d{3})+(?!\d))'),
+    (_) => ',',
+  );
+  return '\$$dollars.${(cents % 100).toString().padLeft(2, '0')}';
+}
+
+const _shortMonths = [
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec',
+];
+
+/// "23 Oct 2026", as the English-only store sheets print dates.
+String formatDemoDate(DateTime date) =>
+    '${date.day} ${_shortMonths[date.month - 1]} ${date.year}';
+
+/// A date in the app's display language.
+String formatPlanDate(BuildContext context, DateTime date) =>
+    isCantonese(context)
+        ? '${date.year}年${date.month}月${date.day}日'
+        : formatDemoDate(date);
+
+/// One pretend payment in the billing history.
+class DemoInvoice {
+  const DemoInvoice({
+    required this.number,
+    required this.date,
+    required this.description,
+    required this.cents,
+    required this.instrument,
+    this.creditCents = 0,
+  });
+
+  final String number;
+  final DateTime date;
+  final String description;
+
+  /// What was "paid" after any credit.
+  final int cents;
+  final int creditCents;
+  final String instrument;
+
+  factory DemoInvoice.fromJson(Map<String, dynamic> json) => DemoInvoice(
+    number: json['number'] as String,
+    date: DateTime.parse(json['date'] as String),
+    description: json['description'] as String,
+    cents: json['cents'] as int,
+    creditCents: json['creditCents'] as int? ?? 0,
+    instrument: json['instrument'] as String,
+  );
+
+  Map<String, dynamic> toJson() => {
+    'number': number,
+    'date': date.toIso8601String(),
+    'description': description,
+    'cents': cents,
+    'creditCents': creditCents,
+    'instrument': instrument,
   };
 }
 
-DemoPaymentMethod _defaultMethod() {
-  if (kIsWeb) return DemoPaymentMethod.stripeWeb;
-  return switch (defaultTargetPlatform) {
-    TargetPlatform.android => DemoPaymentMethod.googlePlay,
-    TargetPlatform.iOS || TargetPlatform.macOS => DemoPaymentMethod.appleIos,
-    _ => DemoPaymentMethod.stripeWeb,
-  };
+String _receiptNumber(math.Random random) {
+  String four() => (1000 + random.nextInt(9000)).toString();
+  return 'ACA-${four()}-${four()}';
 }
 
-Duration _motion(BuildContext context, int ms) =>
-    MediaQuery.of(context).disableAnimations
-        ? Duration(milliseconds: math.min(ms, 120))
-        : Duration(milliseconds: ms);
+/// The pretend billing record for a paid plan: renews, cancels and keeps
+/// receipts like a real subscription, entirely on this device.
+class DemoSubscription {
+  const DemoSubscription({
+    required this.plan,
+    required this.cycle,
+    required this.method,
+    required this.instrument,
+    required this.memberSince,
+    required this.memberNumber,
+    required this.periodStart,
+    required this.renewsAt,
+    this.cancelled = false,
+    this.ended = false,
+    this.invoices = const [],
+  });
 
-class SubscriptionPage extends StatelessWidget {
+  final AcatrainPlan plan;
+  final BillingCycle cycle;
+  final DemoPaymentMethod method;
+  final String instrument;
+  final DateTime memberSince;
+  final String memberNumber;
+  final DateTime periodStart;
+  final DateTime renewsAt;
+
+  /// Cancelled plans stay active until [renewsAt], then end.
+  final bool cancelled;
+  final bool ended;
+
+  /// Newest first.
+  final List<DemoInvoice> invoices;
+
+  bool get active => !ended && plan != AcatrainPlan.free;
+  int get priceCents => plan.priceCents(cycle);
+
+  static DemoSubscription? fromStore(AppStore store) {
+    final json = store.demoSubscription;
+    if (json == null) return null;
+    try {
+      return DemoSubscription.fromJson(json);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  factory DemoSubscription.fromJson(Map<String, dynamic> json) =>
+      DemoSubscription(
+        plan: AcatrainPlan.fromId(json['plan'] as String),
+        cycle: BillingCycle.values.byName(json['cycle'] as String),
+        method: DemoPaymentMethod.values.byName(json['method'] as String),
+        instrument: json['instrument'] as String,
+        memberSince: DateTime.parse(json['memberSince'] as String),
+        memberNumber: json['memberNumber'] as String,
+        periodStart: DateTime.parse(json['periodStart'] as String),
+        renewsAt: DateTime.parse(json['renewsAt'] as String),
+        cancelled: json['cancelled'] as bool? ?? false,
+        ended: json['ended'] as bool? ?? false,
+        invoices: [
+          for (final invoice in json['invoices'] as List? ?? const [])
+            DemoInvoice.fromJson(invoice as Map<String, dynamic>),
+        ],
+      );
+
+  Map<String, dynamic> toJson() => {
+    'plan': plan.id,
+    'cycle': cycle.name,
+    'method': method.name,
+    'instrument': instrument,
+    'memberSince': memberSince.toIso8601String(),
+    'memberNumber': memberNumber,
+    'periodStart': periodStart.toIso8601String(),
+    'renewsAt': renewsAt.toIso8601String(),
+    'cancelled': cancelled,
+    'ended': ended,
+    'invoices': [for (final invoice in invoices) invoice.toJson()],
+  };
+
+  DemoSubscription copyWith({
+    DateTime? periodStart,
+    DateTime? renewsAt,
+    bool? cancelled,
+    bool? ended,
+    List<DemoInvoice>? invoices,
+  }) => DemoSubscription(
+    plan: plan,
+    cycle: cycle,
+    method: method,
+    instrument: instrument,
+    memberSince: memberSince,
+    memberNumber: memberNumber,
+    periodStart: periodStart ?? this.periodStart,
+    renewsAt: renewsAt ?? this.renewsAt,
+    cancelled: cancelled ?? this.cancelled,
+    ended: ended ?? this.ended,
+    invoices: invoices ?? this.invoices,
+  );
+
+  /// Catches up on time spent away: bills each renewal that has passed
+  /// (with a receipt), or ends a cancelled plan once its period is over.
+  DemoSubscription settle(DateTime now, {math.Random? random}) {
+    if (!active) return this;
+    if (cancelled) return now.isBefore(renewsAt) ? this : copyWith(ended: true);
+    final rng = random ?? math.Random();
+    var start = periodStart;
+    var renews = renewsAt;
+    final added = <DemoInvoice>[];
+    // Cap the catch-up so a clock jump cannot stall start-up.
+    while (!now.isBefore(renews) && added.length < 36) {
+      added.insert(
+        0,
+        DemoInvoice(
+          number: _receiptNumber(rng),
+          date: renews,
+          description: 'Acatrain ${plan.label} · ${cycle.name} renewal',
+          cents: priceCents,
+          instrument: instrument,
+        ),
+      );
+      start = renews;
+      renews = cycle.advance(renews);
+    }
+    if (added.isEmpty) return this;
+    return copyWith(
+      periodStart: start,
+      renewsAt: renews,
+      invoices: [...added, ...invoices],
+    );
+  }
+}
+
+/// Applies renewals and cancellations that fell due while the app was
+/// closed. Safe to call any time.
+Future<void> settleDemoSubscription(AppStore store, {DateTime? now}) async {
+  final current = DemoSubscription.fromStore(store);
+  if (current == null || !current.active) return;
+  final settled = current.settle(now ?? DateTime.now());
+  if (identical(settled, current)) return;
+  await store.setDemoSubscription(
+    settled.toJson(),
+    plan: settled.ended ? AcatrainPlan.free.id : null,
+  );
+}
+
+/// What a checkout will charge for moving to [plan] on [cycle].
+class DemoQuote {
+  const DemoQuote({
+    required this.plan,
+    required this.cycle,
+    required this.startsAt,
+    this.replacing,
+    this.creditCents = 0,
+  });
+
+  /// Prices a change from [current], crediting its unused time like the
+  /// stores do when you switch plans mid-period.
+  factory DemoQuote.change(
+    AcatrainPlan plan,
+    BillingCycle cycle,
+    DemoSubscription? current,
+    DateTime now,
+  ) {
+    var credit = 0;
+    if (current != null && current.active && now.isBefore(current.renewsAt)) {
+      final period = current.renewsAt.difference(current.periodStart);
+      final left = current.renewsAt.difference(now);
+      if (period.inSeconds > 0) {
+        credit = (current.priceCents * left.inSeconds / period.inSeconds)
+            .round()
+            .clamp(0, plan.priceCents(cycle));
+      }
+    }
+    return DemoQuote(
+      plan: plan,
+      cycle: cycle,
+      startsAt: now,
+      replacing: credit > 0 ? current!.plan : null,
+      creditCents: credit,
+    );
+  }
+
+  final AcatrainPlan plan;
+  final BillingCycle cycle;
+  final DateTime startsAt;
+  final AcatrainPlan? replacing;
+  final int creditCents;
+
+  int get priceCents => plan.priceCents(cycle);
+  int get dueTodayCents => math.max(0, priceCents - creditCents);
+  DateTime get renewsAt => cycle.advance(startsAt);
+}
+
+class SubscriptionPage extends StatefulWidget {
   const SubscriptionPage({super.key, required this.store});
   final AppStore store;
+
+  @override
+  State<SubscriptionPage> createState() => _SubscriptionPageState();
+}
+
+class _SubscriptionPageState extends State<SubscriptionPage> {
+  final _plansKey = GlobalKey();
+  BillingCycle? _cycle;
+
+  AppStore get store => widget.store;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(settleDemoSubscription(store));
+  }
 
   @override
   Widget build(BuildContext context) => AnimatedBuilder(
@@ -250,6 +542,12 @@ class SubscriptionPage extends StatelessWidget {
     builder: (context, _) {
       final theme = Theme.of(context);
       final current = AcatrainPlan.fromId(store.plan);
+      final record = DemoSubscription.fromStore(store);
+      final subscription =
+          record != null && record.active && record.plan == current
+              ? record
+              : null;
+      final cycle = _cycle ?? subscription?.cycle ?? BillingCycle.monthly;
       return Scaffold(
         appBar: AppBar(title: Text(tr(context, 'Plans'))),
         body: ListView(
@@ -263,9 +561,28 @@ class SubscriptionPage extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    if (subscription != null) ...[
+                      _MembershipPanel(
+                        subscription: subscription,
+                        holder: store.displayName,
+                        onCancel: () => _cancel(subscription),
+                        onResume: () => _resume(subscription),
+                        onChangePlan: _showPlans,
+                      ),
+                      const SizedBox(height: 32),
+                    ],
                     Text(
-                      tr(context, 'Make it yours.'),
-                      style: theme.textTheme.displaySmall,
+                      key: _plansKey,
+                      tr(
+                        context,
+                        subscription == null
+                            ? 'Make it yours.'
+                            : 'Change your plan',
+                      ),
+                      style:
+                          subscription == null
+                              ? theme.textTheme.displaySmall
+                              : theme.textTheme.headlineMedium,
                     ),
                     const SizedBox(height: 8),
                     Text(
@@ -280,6 +597,37 @@ class SubscriptionPage extends StatelessWidget {
                     const SizedBox(height: 14),
                     const _DemoNotice(),
                     const SizedBox(height: 22),
+                    Wrap(
+                      spacing: 12,
+                      runSpacing: 8,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        SegmentedButton<BillingCycle>(
+                          showSelectedIcon: false,
+                          segments: [
+                            ButtonSegment(
+                              value: BillingCycle.monthly,
+                              label: Text(tr(context, 'Monthly')),
+                            ),
+                            ButtonSegment(
+                              value: BillingCycle.yearly,
+                              label: Text(tr(context, 'Yearly')),
+                            ),
+                          ],
+                          selected: {cycle},
+                          onSelectionChanged: (value) {
+                            HapticFeedback.selectionClick();
+                            setState(() => _cycle = value.first);
+                          },
+                        ),
+                        _Pill(
+                          text: tr(context, '2 months free with yearly'),
+                          color: theme.colorScheme.tertiaryContainer,
+                          onColor: theme.colorScheme.onTertiaryContainer,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 18),
                     LayoutBuilder(
                       builder: (context, constraints) {
                         final columns =
@@ -300,8 +648,20 @@ class SubscriptionPage extends StatelessWidget {
                                 width: width,
                                 child: _PlanCard(
                                   plan: plan,
-                                  current: plan == current,
-                                  onChoose: () => _choose(context, plan),
+                                  cycle: cycle,
+                                  current:
+                                      plan == current &&
+                                      (plan == AcatrainPlan.free ||
+                                          subscription == null ||
+                                          subscription.cycle == cycle),
+                                  action: _actionLabel(
+                                    context,
+                                    plan,
+                                    current,
+                                    subscription,
+                                    cycle,
+                                  ),
+                                  onChoose: () => _choose(plan, cycle),
                                 ),
                               ),
                           ],
@@ -318,21 +678,164 @@ class SubscriptionPage extends StatelessWidget {
     },
   );
 
-  Future<void> _choose(BuildContext context, AcatrainPlan plan) async {
+  String _actionLabel(
+    BuildContext context,
+    AcatrainPlan plan,
+    AcatrainPlan current,
+    DemoSubscription? subscription,
+    BillingCycle cycle,
+  ) {
+    if (plan == AcatrainPlan.free) return tr(context, 'Switch to Free');
+    final price = formatMoney(plan.priceCents(cycle));
+    final verb =
+        current == AcatrainPlan.free
+            ? 'Subscribe'
+            : plan == current
+            ? (cycle == BillingCycle.yearly
+                ? 'Switch to yearly'
+                : 'Switch to monthly')
+            : plan.index > current.index
+            ? 'Upgrade'
+            : 'Downgrade';
+    return '${tr(context, verb)} · $price';
+  }
+
+  void _showPlans() {
+    final target = _plansKey.currentContext;
+    if (target == null) return;
+    Scrollable.ensureVisible(
+      target,
+      duration: demoMotion(context, 520),
+      curve: Curves.easeInOutCubic,
+    );
+  }
+
+  Future<void> _choose(AcatrainPlan plan, BillingCycle cycle) async {
+    final record = DemoSubscription.fromStore(store);
+    final subscription = record != null && record.active ? record : null;
     if (plan == AcatrainPlan.free) {
+      if (subscription != null && !subscription.cancelled) {
+        await _cancel(subscription);
+        return;
+      }
+      if (subscription != null) return;
       await store.setPlan(plan.id);
-      if (context.mounted) {
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(tr(context, 'Back to the Evergreen theme.'))),
         );
       }
       return;
     }
-    final paid = await showDemoCheckout(context, plan);
-    if (!paid || !context.mounted) return;
-    await store.setPlan(plan.id);
-    if (!context.mounted) return;
-    await _celebrate(context, plan);
+    final now = DateTime.now();
+    final quote = DemoQuote.change(plan, cycle, subscription, now);
+    final charge = await showDemoCheckout(
+      context,
+      quote,
+      payer: DemoPayer(name: store.displayName, email: store.email),
+    );
+    if (charge == null || !mounted) return;
+    final random = math.Random();
+    final next = DemoSubscription(
+      plan: plan,
+      cycle: cycle,
+      method: charge.method,
+      instrument: charge.instrument,
+      memberSince: subscription?.memberSince ?? now,
+      memberNumber:
+          record?.memberNumber ??
+          List.generate(4, (_) => random.nextInt(10)).join(),
+      periodStart: now,
+      renewsAt: quote.renewsAt,
+      invoices: [
+        DemoInvoice(
+          number: _receiptNumber(random),
+          date: now,
+          description:
+              'Acatrain ${plan.label} · ${cycle.name}'
+              '${quote.replacing == null ? '' : ' (from ${quote.replacing!.label})'}',
+          cents: quote.dueTodayCents,
+          creditCents: quote.creditCents,
+          instrument: charge.instrument,
+        ),
+        ...?record?.invoices,
+      ],
+    );
+    await store.setDemoSubscription(next.toJson(), plan: plan.id);
+    if (!mounted) return;
+    await _celebrate(context, next, store.displayName);
+  }
+
+  Future<void> _cancel(DemoSubscription subscription) async {
+    final theme = Theme.of(context);
+    final until = formatPlanDate(context, subscription.renewsAt);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder:
+          (context) => AlertDialog(
+            icon: Icon(
+              Icons.heart_broken_outlined,
+              color: theme.colorScheme.error,
+            ),
+            title: Text(
+              isCantonese(context)
+                  ? '取消 ${subscription.plan.label}？'
+                  : 'Cancel ${subscription.plan.label}?',
+            ),
+            content: Text(
+              isCantonese(context)
+                  ? '你可以用「${tr(context, subscription.plan.themeName)}」主題直到 $until。之後 Acatrain 會轉返常青主題。到期前隨時可以恢復。'
+                  : 'You keep the ${subscription.plan.themeName} theme until '
+                      '$until. After that Acatrain goes back to Evergreen. '
+                      'You can resume any time before then.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: Text(tr(context, 'Keep plan')),
+              ),
+              TextButton(
+                style: TextButton.styleFrom(
+                  foregroundColor: theme.colorScheme.error,
+                ),
+                onPressed: () => Navigator.pop(context, true),
+                child: Text(tr(context, 'Cancel subscription')),
+              ),
+            ],
+          ),
+    );
+    if (confirmed != true) return;
+    await store.setDemoSubscription(
+      subscription.copyWith(cancelled: true).toJson(),
+    );
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          isCantonese(context)
+              ? '已取消訂閱，可以用到 $until。'
+              : 'Subscription cancelled. Yours until $until.',
+        ),
+      ),
+    );
+  }
+
+  Future<void> _resume(DemoSubscription subscription) async {
+    HapticFeedback.mediumImpact();
+    await store.setDemoSubscription(
+      subscription.copyWith(cancelled: false).toJson(),
+    );
+    if (!mounted) return;
+    final date = formatPlanDate(context, subscription.renewsAt);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          isCantonese(context)
+              ? '歡迎返嚟！方案會喺 $date 續訂。'
+              : 'Welcome back. Your plan renews on $date.',
+        ),
+      ),
+    );
   }
 }
 
@@ -371,15 +874,46 @@ class _DemoNotice extends StatelessWidget {
   }
 }
 
+class _Pill extends StatelessWidget {
+  const _Pill({required this.text, required this.color, required this.onColor});
+  final String text;
+  final Color color;
+  final Color onColor;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+    decoration: BoxDecoration(
+      color: color,
+      borderRadius: BorderRadius.circular(AcatrainRadii.full),
+    ),
+    child: Text(
+      text,
+      style: Theme.of(context).textTheme.labelMedium?.copyWith(color: onColor),
+    ),
+  );
+}
+
+IconData _planIcon(AcatrainPlan plan) => switch (plan) {
+  AcatrainPlan.free => Icons.eco_rounded,
+  AcatrainPlan.starter => Icons.diamond_outlined,
+  AcatrainPlan.pro => Icons.auto_awesome_rounded,
+  AcatrainPlan.max => Icons.workspace_premium_rounded,
+};
+
 class _PlanCard extends StatelessWidget {
   const _PlanCard({
     required this.plan,
+    required this.cycle,
     required this.current,
+    required this.action,
     required this.onChoose,
   });
 
   final AcatrainPlan plan;
+  final BillingCycle cycle;
   final bool current;
+  final String action;
   final VoidCallback onChoose;
 
   @override
@@ -387,6 +921,12 @@ class _PlanCard extends StatelessWidget {
     final theme = Theme.of(context);
     final foreground =
         plan == AcatrainPlan.free ? Colors.white : const Color(0xFFFFF8E7);
+    final cents = plan.priceCents(cycle);
+    final badge = switch (plan) {
+      AcatrainPlan.pro => 'Most popular',
+      AcatrainPlan.max => 'High-roller pick',
+      _ => null,
+    };
     return Card(
       clipBehavior: Clip.antiAlias,
       shape: RoundedRectangleBorder(
@@ -413,32 +953,59 @@ class _PlanCard extends StatelessWidget {
                     children: [
                       Row(
                         children: [
-                          Icon(
-                            switch (plan) {
-                              AcatrainPlan.free => Icons.eco_rounded,
-                              AcatrainPlan.starter => Icons.diamond_outlined,
-                              AcatrainPlan.pro => Icons.auto_awesome_rounded,
-                              AcatrainPlan.max =>
-                                Icons.workspace_premium_rounded,
-                            },
-                            color: foreground,
-                            size: 22,
-                          ),
+                          Icon(_planIcon(plan), color: foreground, size: 22),
                           const SizedBox(width: 8),
-                          Text(
-                            plan.label,
-                            style: theme.textTheme.titleLarge?.copyWith(
-                              color: foreground,
+                          Flexible(
+                            child: Text(
+                              plan.label,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: theme.textTheme.titleLarge?.copyWith(
+                                color: foreground,
+                              ),
                             ),
                           ),
                         ],
                       ),
                       const Spacer(),
-                      Text(
-                        tr(context, plan.themeName),
-                        style: theme.textTheme.labelLarge?.copyWith(
-                          color: foreground.withValues(alpha: 0.86),
-                        ),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              tr(context, plan.themeName),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: theme.textTheme.labelLarge?.copyWith(
+                                color: foreground.withValues(alpha: 0.86),
+                              ),
+                            ),
+                          ),
+                          if (badge != null)
+                            ConstrainedBox(
+                              constraints: const BoxConstraints(maxWidth: 150),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 3,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: plan.shine,
+                                  borderRadius: BorderRadius.circular(
+                                    AcatrainRadii.full,
+                                  ),
+                                ),
+                                child: Text(
+                                  tr(context, badge),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: theme.textTheme.labelSmall?.copyWith(
+                                    color: plan.deep,
+                                    letterSpacing: 0.2,
+                                  ),
+                                ),
+                              ),
+                            ),
+                        ],
                       ),
                     ],
                   ),
@@ -454,15 +1021,30 @@ class _PlanCard extends StatelessWidget {
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
-                    Text(
-                      plan.price == 0 ? '\$0' : '\$${plan.price}',
-                      style: theme.textTheme.headlineLarge,
+                    AnimatedSwitcher(
+                      duration: demoMotion(context, 240),
+                      transitionBuilder:
+                          (child, animation) => FadeTransition(
+                            opacity: animation,
+                            child: SlideTransition(
+                              position: Tween(
+                                begin: const Offset(0, 0.3),
+                                end: Offset.zero,
+                              ).animate(animation),
+                              child: child,
+                            ),
+                          ),
+                      child: Text(
+                        plan.price == 0 ? '\$0' : '\$${cents ~/ 100}',
+                        key: ValueKey(cents),
+                        style: theme.textTheme.headlineLarge,
+                      ),
                     ),
                     const SizedBox(width: 4),
                     Padding(
                       padding: const EdgeInsets.only(bottom: 5),
                       child: Text(
-                        tr(context, '/ month'),
+                        tr(context, cycle.perLabel),
                         style: theme.textTheme.bodyMedium?.copyWith(
                           color: theme.colorScheme.onSurfaceVariant,
                         ),
@@ -470,7 +1052,21 @@ class _PlanCard extends StatelessWidget {
                     ),
                   ],
                 ),
-                const SizedBox(height: 12),
+                SizedBox(
+                  height: 20,
+                  child:
+                      cycle == BillingCycle.yearly && plan.price > 0
+                          ? Text(
+                            isCantonese(context)
+                                ? '即係每月 ${formatMoney((cents / 12).round())}'
+                                : 'That is ${formatMoney((cents / 12).round())} a month',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.colorScheme.tertiary,
+                            ),
+                          )
+                          : null,
+                ),
+                const SizedBox(height: 4),
                 for (final perk in plan.perks)
                   Padding(
                     padding: const EdgeInsets.only(bottom: 6),
@@ -502,11 +1098,7 @@ class _PlanCard extends StatelessWidget {
                           )
                           : FilledButton(
                             onPressed: onChoose,
-                            child: Text(
-                              plan == AcatrainPlan.free
-                                  ? tr(context, 'Switch to Free')
-                                  : '${tr(context, 'Subscribe')} · ${plan.priceLabel}',
-                            ),
+                            child: Text(action),
                           ),
                 ),
               ],
@@ -516,6 +1108,704 @@ class _PlanCard extends StatelessWidget {
       ),
     );
   }
+}
+
+// ---------------------------------------------------------------------------
+// Membership: card, status, billing history and receipts
+// ---------------------------------------------------------------------------
+
+class _MembershipPanel extends StatelessWidget {
+  const _MembershipPanel({
+    required this.subscription,
+    required this.holder,
+    required this.onCancel,
+    required this.onResume,
+    required this.onChangePlan,
+  });
+
+  final DemoSubscription subscription;
+  final String? holder;
+  final VoidCallback onCancel;
+  final VoidCallback onResume;
+  final VoidCallback onChangePlan;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final s = subscription;
+    final card = Container(
+      alignment: Alignment.center,
+      constraints: const BoxConstraints(maxWidth: 400),
+      child: MemberCard(
+        plan: s.plan,
+        holder: holder,
+        number: s.memberNumber,
+        since: s.memberSince,
+      ),
+    );
+    final details = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Flexible(
+              child: Text(
+                isCantonese(context)
+                    ? '你嘅 ${s.plan.label} 會籍'
+                    : 'Your ${s.plan.label} membership',
+                style: theme.textTheme.headlineSmall,
+              ),
+            ),
+            const SizedBox(width: 10),
+            _Pill(
+              text: tr(context, s.cancelled ? 'Cancelled' : 'Active'),
+              color:
+                  s.cancelled ? colors.errorContainer : colors.primaryContainer,
+              onColor:
+                  s.cancelled
+                      ? colors.onErrorContainer
+                      : colors.onPrimaryContainer,
+            ),
+          ],
+        ),
+        const SizedBox(height: 14),
+        _detail(
+          context,
+          Icons.event_repeat_rounded,
+          tr(context, s.cancelled ? 'Access until' : 'Next payment'),
+          s.cancelled
+              ? formatPlanDate(context, s.renewsAt)
+              : '${formatMoney(s.priceCents)} · ${formatPlanDate(context, s.renewsAt)}',
+        ),
+        _detail(
+          context,
+          Icons.payments_outlined,
+          tr(context, 'Payment method'),
+          '${s.instrument} · ${s.method.label}',
+        ),
+        _detail(
+          context,
+          Icons.calendar_month_outlined,
+          tr(context, 'Billing'),
+          tr(context, s.cycle == BillingCycle.yearly ? 'Yearly' : 'Monthly'),
+        ),
+        const SizedBox(height: 14),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            FilledButton.tonalIcon(
+              onPressed: onChangePlan,
+              icon: const Icon(Icons.swap_vert_rounded),
+              label: Text(tr(context, 'Change plan')),
+            ),
+            if (s.cancelled)
+              FilledButton.icon(
+                onPressed: onResume,
+                icon: const Icon(Icons.replay_rounded),
+                label: Text(tr(context, 'Resume subscription')),
+              )
+            else
+              TextButton(
+                style: TextButton.styleFrom(foregroundColor: colors.error),
+                onPressed: onCancel,
+                child: Text(tr(context, 'Cancel subscription')),
+              ),
+          ],
+        ),
+      ],
+    );
+    return LayoutBuilder(
+      builder:
+          (context, constraints) => Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (constraints.maxWidth >= 720)
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Expanded(child: card),
+                    const SizedBox(width: 28),
+                    Expanded(child: details),
+                  ],
+                )
+              else ...[
+                Center(child: card),
+                const SizedBox(height: 22),
+                details,
+              ],
+              if (s.invoices.isNotEmpty) ...[
+                const SizedBox(height: 26),
+                Text(
+                  tr(context, 'Billing history'),
+                  style: theme.textTheme.titleLarge,
+                ),
+                const SizedBox(height: 10),
+                _BillingHistory(invoices: s.invoices, plan: s.plan),
+              ],
+            ],
+          ),
+    );
+  }
+
+  Widget _detail(
+    BuildContext context,
+    IconData icon,
+    String label,
+    String value,
+  ) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 5),
+      child: Row(
+        children: [
+          Icon(icon, size: 20, color: theme.colorScheme.onSurfaceVariant),
+          const SizedBox(width: 12),
+          Expanded(
+            flex: 2,
+            child: Text(
+              label,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            flex: 3,
+            child: Text(value, style: theme.textTheme.titleSmall),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _BillingHistory extends StatefulWidget {
+  const _BillingHistory({required this.invoices, required this.plan});
+  final List<DemoInvoice> invoices;
+  final AcatrainPlan plan;
+
+  @override
+  State<_BillingHistory> createState() => _BillingHistoryState();
+}
+
+class _BillingHistoryState extends State<_BillingHistory> {
+  bool _all = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final invoices = widget.invoices;
+    final shown = _all ? invoices : invoices.take(4).toList();
+    return Column(
+      children: [
+        for (var i = 0; i < shown.length; i++)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 2),
+            child: Material(
+              color: theme.colorScheme.surfaceContainerLow,
+              shape: RoundedRectangleBorder(
+                borderRadius: segmentRadius(i, shown.length),
+              ),
+              clipBehavior: Clip.antiAlias,
+              child: ListTile(
+                onTap: () => showDemoReceipt(context, shown[i], widget.plan),
+                leading: Icon(
+                  Icons.receipt_long_outlined,
+                  color: theme.colorScheme.primary,
+                ),
+                title: Text(shown[i].description),
+                subtitle: Text(
+                  '${formatPlanDate(context, shown[i].date)} · ${shown[i].instrument}',
+                ),
+                trailing: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text(
+                      formatMoney(shown[i].cents),
+                      style: theme.textTheme.titleSmall,
+                    ),
+                    Text(
+                      tr(context, 'Paid'),
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: theme.colorScheme.primary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        if (invoices.length > 4 && !_all)
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton(
+              onPressed: () => setState(() => _all = true),
+              child: Text(
+                isCantonese(context)
+                    ? '顯示全部 ${invoices.length} 張收據'
+                    : 'Show all ${invoices.length} receipts',
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+/// A paper-style receipt for one pretend payment.
+Future<void> showDemoReceipt(
+  BuildContext context,
+  DemoInvoice invoice,
+  AcatrainPlan plan,
+) => showModalBottomSheet<void>(
+  context: context,
+  isScrollControlled: true,
+  useSafeArea: true,
+  backgroundColor: Colors.transparent,
+  constraints: const BoxConstraints(maxWidth: 480),
+  builder: (_) => SingleChildScrollView(child: _Receipt(invoice, plan)),
+);
+
+class _Receipt extends StatelessWidget {
+  const _Receipt(this.invoice, this.plan);
+  final DemoInvoice invoice;
+  final AcatrainPlan plan;
+
+  static const _ink = Color(0xFF1A1A1A);
+  static const _muted = Color(0xFF6B6B6B);
+
+  @override
+  Widget build(BuildContext context) {
+    Widget row(String label, String value, {bool bold = false}) => Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              label,
+              style: TextStyle(
+                color: bold ? _ink : _muted,
+                fontWeight: bold ? FontWeight.w600 : FontWeight.w400,
+              ),
+            ),
+          ),
+          Text(
+            value,
+            style: TextStyle(
+              fontWeight: bold ? FontWeight.w600 : FontWeight.w400,
+              fontFeatures: const [FontFeature.tabularFigures()],
+            ),
+          ),
+        ],
+      ),
+    );
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+      child: ClipPath(
+        clipper: const _ZigzagClipper(),
+        child: Container(
+          color: const Color(0xFFFFFEFA),
+          padding: const EdgeInsets.fromLTRB(24, 26, 24, 34),
+          child: DefaultTextStyle.merge(
+            style: const TextStyle(fontSize: 14, color: _ink),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    PlanThumb(plan: plan, radius: 10, size: 40),
+                    const SizedBox(width: 12),
+                    const Expanded(
+                      child: Text(
+                        'Receipt from Acatrain',
+                        style: TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: 'Close',
+                      onPressed: () => Navigator.pop(context),
+                      icon: const Icon(Icons.close_rounded, color: _muted),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 18),
+                Text(
+                  formatMoney(invoice.cents),
+                  style: const TextStyle(
+                    fontSize: 36,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                Text(
+                  'Paid ${formatDemoDate(invoice.date)}',
+                  style: const TextStyle(color: _muted),
+                ),
+                const SizedBox(height: 18),
+                row('Receipt number', invoice.number),
+                row('Payment method', invoice.instrument),
+                row(
+                  'Date paid',
+                  '${formatDemoDate(invoice.date)}, '
+                      '${invoice.date.hour.toString().padLeft(2, '0')}:'
+                      '${invoice.date.minute.toString().padLeft(2, '0')}',
+                ),
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 12),
+                  child: _DashedLine(),
+                ),
+                const Text(
+                  'SUMMARY',
+                  style: TextStyle(
+                    fontSize: 11,
+                    letterSpacing: 1.2,
+                    color: _muted,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                row(
+                  invoice.description,
+                  formatMoney(invoice.cents + invoice.creditCents),
+                ),
+                if (invoice.creditCents > 0)
+                  row(
+                    'Credit for unused time',
+                    '−${formatMoney(invoice.creditCents)}',
+                  ),
+                row('Tax', formatMoney(0)),
+                const Divider(height: 18),
+                row('Amount paid', formatMoney(invoice.cents), bold: true),
+                const SizedBox(height: 20),
+                Text(
+                  tr(context, 'Demo receipt. No money moved.'),
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(fontSize: 12, color: _muted),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _DashedLine extends StatelessWidget {
+  const _DashedLine();
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder:
+        (context, constraints) => Row(
+          children: List.generate(
+            (constraints.maxWidth / 8).floor(),
+            (_) => Container(
+              width: 4,
+              height: 1,
+              margin: const EdgeInsets.only(right: 4),
+              color: const Color(0xFFBDBDBD),
+            ),
+          ),
+        ),
+  );
+}
+
+/// Rounded top, torn-paper zigzag bottom.
+class _ZigzagClipper extends CustomClipper<Path> {
+  const _ZigzagClipper();
+
+  @override
+  Path getClip(Size size) {
+    const tooth = 10.0;
+    const radius = 16.0;
+    final path =
+        Path()
+          ..moveTo(0, radius)
+          ..quadraticBezierTo(0, 0, radius, 0)
+          ..lineTo(size.width - radius, 0)
+          ..quadraticBezierTo(size.width, 0, size.width, radius)
+          ..lineTo(size.width, size.height - tooth);
+    final teeth = (size.width / (tooth * 2)).ceil();
+    final step = size.width / teeth;
+    for (var i = teeth; i > 0; i--) {
+      final x = i * step;
+      path
+        ..lineTo(x - step / 2, size.height)
+        ..lineTo(x - step, size.height - tooth);
+    }
+    return path..close();
+  }
+
+  @override
+  bool shouldReclip(covariant CustomClipper<Path> oldClipper) => false;
+}
+
+/// A metal membership card that tilts toward the pointer or finger, with a
+/// glare that follows it.
+class MemberCard extends StatefulWidget {
+  const MemberCard({
+    super.key,
+    required this.plan,
+    required this.number,
+    required this.since,
+    this.holder,
+  });
+
+  final AcatrainPlan plan;
+  final String number;
+  final DateTime since;
+  final String? holder;
+
+  @override
+  State<MemberCard> createState() => _MemberCardState();
+}
+
+class _MemberCardState extends State<MemberCard> {
+  Offset _tilt = Offset.zero;
+
+  void _aim(Offset local, Size size) {
+    if (MediaQuery.of(context).disableAnimations) return;
+    setState(() {
+      _tilt = Offset(
+        (local.dx / size.width * 2 - 1).clamp(-1.0, 1.0),
+        (local.dy / size.height * 2 - 1).clamp(-1.0, 1.0),
+      );
+    });
+  }
+
+  void _rest() => setState(() => _tilt = Offset.zero);
+
+  @override
+  Widget build(BuildContext context) {
+    final plan = widget.plan;
+    const ink = Color(0xFFFFF8E7);
+    final holder =
+        (widget.holder?.trim().isNotEmpty ?? false)
+            ? widget.holder!.trim().toUpperCase()
+            : 'ACATRAIN MEMBER';
+    final since =
+        '${widget.since.month.toString().padLeft(2, '0')}/'
+        '${(widget.since.year % 100).toString().padLeft(2, '0')}';
+    return AspectRatio(
+      aspectRatio: 1.586,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final size = constraints.biggest;
+          final scale = size.width / 360;
+          return MouseRegion(
+            onHover: (event) => _aim(event.localPosition, size),
+            onExit: (_) => _rest(),
+            child: GestureDetector(
+              onPanUpdate: (details) => _aim(details.localPosition, size),
+              onPanEnd: (_) => _rest(),
+              onPanCancel: _rest,
+              child: TweenAnimationBuilder<Offset>(
+                tween: Tween(end: _tilt),
+                duration: const Duration(milliseconds: 220),
+                curve: Curves.easeOutCubic,
+                builder:
+                    (context, tilt, child) => Transform(
+                      alignment: Alignment.center,
+                      transform:
+                          Matrix4.identity()
+                            ..setEntry(3, 2, 0.0012)
+                            ..rotateX(-tilt.dy * 0.22)
+                            ..rotateY(tilt.dx * 0.22),
+                      child: Container(
+                        decoration: BoxDecoration(
+                          gradient: plan.gradient,
+                          borderRadius: BorderRadius.circular(18 * scale),
+                          boxShadow: [
+                            BoxShadow(
+                              color: plan.deep.withValues(alpha: 0.45),
+                              blurRadius: 28,
+                              offset: Offset(-tilt.dx * 10, 14 - tilt.dy * 6),
+                            ),
+                          ],
+                        ),
+                        foregroundDecoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(18 * scale),
+                          gradient: RadialGradient(
+                            center: Alignment(tilt.dx, tilt.dy),
+                            radius: 0.9,
+                            colors: [
+                              Colors.white.withValues(alpha: 0.28),
+                              Colors.white.withValues(alpha: 0),
+                            ],
+                          ),
+                        ),
+                        child: child,
+                      ),
+                    ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(18 * scale),
+                  child: Stack(
+                    children: [
+                      Positioned.fill(child: _Sheen(color: plan.shine)),
+                      Padding(
+                        padding: EdgeInsets.all(20 * scale),
+                        child: DefaultTextStyle.merge(
+                          style: TextStyle(color: ink, fontSize: 13 * scale),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Text(
+                                    'ACATRAIN',
+                                    style: TextStyle(
+                                      fontSize: 15 * scale,
+                                      fontWeight: FontWeight.w800,
+                                      letterSpacing: 3 * scale,
+                                    ),
+                                  ),
+                                  const Spacer(),
+                                  Icon(
+                                    _planIcon(plan),
+                                    color: plan.shine,
+                                    size: 18 * scale,
+                                  ),
+                                  SizedBox(width: 6 * scale),
+                                  Text(
+                                    plan.label.toUpperCase(),
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w700,
+                                      letterSpacing: 1.2 * scale,
+                                      color: plan.shine,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              SizedBox(height: 22 * scale),
+                              _Chip(scale: scale, color: plan.shine),
+                              const Spacer(),
+                              Text(
+                                '••••  ••••  ••••  ${widget.number}',
+                                style: TextStyle(
+                                  fontSize: 18 * scale,
+                                  letterSpacing: 1.5 * scale,
+                                  fontFeatures: const [
+                                    FontFeature.tabularFigures(),
+                                  ],
+                                ),
+                              ),
+                              SizedBox(height: 12 * scale),
+                              Row(
+                                crossAxisAlignment: CrossAxisAlignment.end,
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      holder,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w600,
+                                        letterSpacing: 1.2 * scale,
+                                      ),
+                                    ),
+                                  ),
+                                  Column(
+                                    crossAxisAlignment: CrossAxisAlignment.end,
+                                    children: [
+                                      Text(
+                                        'MEMBER SINCE',
+                                        style: TextStyle(
+                                          fontSize: 8 * scale,
+                                          letterSpacing: 1 * scale,
+                                          color: ink.withValues(alpha: 0.7),
+                                        ),
+                                      ),
+                                      Text(
+                                        since,
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+/// The card's contact chip.
+class _Chip extends StatelessWidget {
+  const _Chip({required this.scale, required this.color});
+  final double scale;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    width: 42 * scale,
+    height: 32 * scale,
+    decoration: BoxDecoration(
+      borderRadius: BorderRadius.circular(6 * scale),
+      gradient: LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [
+          Color.lerp(color, Colors.white, 0.35)!,
+          color,
+          Color.lerp(color, Colors.black, 0.25)!,
+        ],
+      ),
+    ),
+    child: CustomPaint(
+      painter: _ChipLines(Colors.black.withValues(alpha: 0.25)),
+    ),
+  );
+}
+
+class _ChipLines extends CustomPainter {
+  _ChipLines(this.color);
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint =
+        Paint()
+          ..color = color
+          ..strokeWidth = 1
+          ..style = PaintingStyle.stroke;
+    final w = size.width;
+    final h = size.height;
+    canvas
+      ..drawLine(Offset(0, h / 3), Offset(w * 0.35, h / 3), paint)
+      ..drawLine(Offset(0, h * 2 / 3), Offset(w * 0.35, h * 2 / 3), paint)
+      ..drawLine(Offset(w * 0.65, h / 3), Offset(w, h / 3), paint)
+      ..drawLine(Offset(w * 0.65, h * 2 / 3), Offset(w, h * 2 / 3), paint)
+      ..drawRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromLTRB(w * 0.35, h * 0.2, w * 0.65, h * 0.8),
+          const Radius.circular(3),
+        ),
+        paint,
+      );
+  }
+
+  @override
+  bool shouldRepaint(_ChipLines old) => old.color != color;
 }
 
 /// A slow diagonal highlight that sweeps across the plan art.
@@ -573,1168 +1863,33 @@ class _SheenState extends State<_Sheen> with SingleTickerProviderStateMixin {
   );
 }
 
-/// Walks through a simulated checkout for [plan]. Returns true when the
-/// pretend payment "succeeds". Never contacts any payment provider.
-Future<bool> showDemoCheckout(BuildContext context, AcatrainPlan plan) async {
-  final method = await showModalBottomSheet<DemoPaymentMethod>(
-    context: context,
-    useSafeArea: true,
-    showDragHandle: true,
-    constraints: const BoxConstraints(maxWidth: 560),
-    isScrollControlled: true,
-    builder: (_) => SingleChildScrollView(child: _MethodPicker(plan: plan)),
-  );
-  if (method == null || !context.mounted) return false;
-  final checkout = switch (method) {
-    DemoPaymentMethod.googlePlay => showModalBottomSheet<bool>(
-      context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      backgroundColor: Colors.transparent,
-      constraints: const BoxConstraints(maxWidth: 560),
-      builder:
-          (_) => SingleChildScrollView(child: _GooglePlaySheet(plan: plan)),
-    ),
-    DemoPaymentMethod.appleIos => showModalBottomSheet<bool>(
-      context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      backgroundColor: Colors.transparent,
-      constraints: const BoxConstraints(maxWidth: 520),
-      builder: (_) => SingleChildScrollView(child: _AppleSheet(plan: plan)),
-    ),
-    DemoPaymentMethod.stripeWeb => showGeneralDialog<bool>(
-      context: context,
-      barrierDismissible: true,
-      barrierLabel: 'Close',
-      barrierColor: const Color(0x99000000),
-      transitionDuration: _motion(context, 320),
-      pageBuilder: (_, _, _) => _StripeCheckout(plan: plan),
-      transitionBuilder: (context, animation, _, child) {
-        final curved = CurvedAnimation(
-          parent: animation,
-          curve: Curves.easeOutCubic,
-        );
-        return FadeTransition(
-          opacity: curved,
-          child: ScaleTransition(
-            scale: Tween(begin: 0.94, end: 1.0).animate(curved),
-            child: child,
-          ),
-        );
-      },
-    ),
-  };
-  return await checkout ?? false;
-}
-
-class _MethodPicker extends StatefulWidget {
-  const _MethodPicker({required this.plan});
-  final AcatrainPlan plan;
-
-  @override
-  State<_MethodPicker> createState() => _MethodPickerState();
-}
-
-class _MethodPickerState extends State<_MethodPicker> {
-  DemoPaymentMethod _method = _defaultMethod();
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final methods = DemoPaymentMethod.values;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            '${widget.plan.label} · ${widget.plan.priceLabel}${tr(context, '/ month')}',
-            style: theme.textTheme.headlineSmall,
-          ),
-          const SizedBox(height: 6),
-          Text(
-            tr(context, 'Pick a checkout to try. Every one is simulated.'),
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
-          const SizedBox(height: 18),
-          for (var i = 0; i < methods.length; i++)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 2),
-              child: Material(
-                color:
-                    _method == methods[i]
-                        ? theme.colorScheme.secondaryContainer
-                        : theme.colorScheme.surfaceContainerHigh,
-                shape: RoundedRectangleBorder(
-                  borderRadius: segmentRadius(i, methods.length),
-                ),
-                clipBehavior: Clip.antiAlias,
-                child: InkWell(
-                  onTap: () => setState(() => _method = methods[i]),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 14,
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(methods[i].icon),
-                        const SizedBox(width: 14),
-                        Expanded(
-                          child: Text(
-                            methods[i].label,
-                            style: theme.textTheme.titleMedium,
-                          ),
-                        ),
-                        if (methods[i] == _defaultMethod())
-                          Padding(
-                            padding: const EdgeInsets.only(right: 8),
-                            child: Text(
-                              tr(context, 'This device'),
-                              style: theme.textTheme.labelMedium?.copyWith(
-                                color: theme.colorScheme.onSurfaceVariant,
-                              ),
-                            ),
-                          ),
-                        Icon(
-                          _method == methods[i]
-                              ? Icons.radio_button_checked_rounded
-                              : Icons.radio_button_off_rounded,
-                          color: theme.colorScheme.primary,
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          const SizedBox(height: 18),
-          SizedBox(
-            width: double.infinity,
-            child: FilledButton(
-              onPressed: () => Navigator.pop(context, _method),
-              child: Text(tr(context, 'Continue')),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-enum _PayStage { review, processing, done }
-
-/// Shared state machine for the three fake checkouts: review → processing →
-/// done, then closes itself with `true`.
-mixin _FakePayment<T extends StatefulWidget> on State<T> {
-  _PayStage stage = _PayStage.review;
-
-  Future<void> pay({int processingMs = 1600}) async {
-    if (stage != _PayStage.review) return;
-    setState(() => stage = _PayStage.processing);
-    await Future<void>.delayed(_motion(context, processingMs));
-    if (!mounted) return;
-    setState(() => stage = _PayStage.done);
-    await Future<void>.delayed(_motion(context, 1300));
-    if (mounted) Navigator.pop(context, true);
-  }
-}
-
-/// Draws a ring, then a check mark, as [progress] runs 0 → 1.
-class AnimatedCheck extends StatelessWidget {
-  const AnimatedCheck({
-    super.key,
-    required this.color,
-    this.size = 72,
-    this.filled = false,
-    this.duration = const Duration(milliseconds: 700),
-  });
-
-  final Color color;
-  final double size;
-  final bool filled;
-  final Duration duration;
-
-  @override
-  Widget build(BuildContext context) => TweenAnimationBuilder<double>(
-    tween: Tween(begin: 0, end: 1),
-    duration: _motion(context, duration.inMilliseconds),
-    curve: Curves.easeOutCubic,
-    builder:
-        (context, t, _) => Transform.scale(
-          scale: 0.7 + 0.3 * Curves.easeOutBack.transform(t),
-          child: CustomPaint(
-            size: Size.square(size),
-            painter: _CheckPainter(t, color, filled),
-          ),
-        ),
-  );
-}
-
-class _CheckPainter extends CustomPainter {
-  _CheckPainter(this.t, this.color, this.filled);
-  final double t;
-  final Color color;
-  final bool filled;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final stroke = size.width * 0.075;
-    final rect = Offset.zero & size;
-    final ring = (t / 0.55).clamp(0.0, 1.0);
-    final tick = ((t - 0.45) / 0.55).clamp(0.0, 1.0);
-    if (filled) {
-      canvas.drawCircle(
-        rect.center,
-        size.width / 2 * ring,
-        Paint()..color = color,
-      );
-    } else {
-      canvas.drawArc(
-        rect.deflate(stroke / 2),
-        -math.pi / 2,
-        math.pi * 2 * ring,
-        false,
-        Paint()
-          ..color = color
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = stroke
-          ..strokeCap = StrokeCap.round,
-      );
-    }
-    if (tick == 0) return;
-    final path =
-        Path()
-          ..moveTo(size.width * 0.28, size.height * 0.52)
-          ..lineTo(size.width * 0.44, size.height * 0.67)
-          ..lineTo(size.width * 0.73, size.height * 0.37);
-    final metric = path.computeMetrics().first;
-    canvas.drawPath(
-      metric.extractPath(0, metric.length * tick),
-      Paint()
-        ..color = filled ? Colors.white : color
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = stroke
-        ..strokeCap = StrokeCap.round
-        ..strokeJoin = StrokeJoin.round,
-    );
-  }
-
-  @override
-  bool shouldRepaint(_CheckPainter old) =>
-      old.t != t || old.color != color || old.filled != filled;
-}
-
-class _DemoTag extends StatelessWidget {
-  const _DemoTag({required this.color});
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) => Text(
-    tr(context, 'Simulated payment · not charged'),
-    textAlign: TextAlign.center,
-    style: TextStyle(fontSize: 11, color: color, letterSpacing: 0.3),
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Google Play style
-// ---------------------------------------------------------------------------
-
-class _GooglePlaySheet extends StatefulWidget {
-  const _GooglePlaySheet({required this.plan});
-  final AcatrainPlan plan;
-
-  @override
-  State<_GooglePlaySheet> createState() => _GooglePlaySheetState();
-}
-
-class _GooglePlaySheetState extends State<_GooglePlaySheet> with _FakePayment {
-  static const _green = Color(0xFF01875F);
-  static const _ink = Color(0xFF1F1F1F);
-  static const _muted = Color(0xFF5F6368);
-
-  @override
-  Widget build(BuildContext context) {
-    final plan = widget.plan;
-    return PopScope(
-      canPop: stage == _PayStage.review,
-      child: Container(
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-        ),
-        padding: const EdgeInsets.fromLTRB(24, 12, 24, 24),
-        child: DefaultTextStyle(
-          style: const TextStyle(fontSize: 14, color: _ink),
-          child: AnimatedSize(
-            duration: _motion(context, 320),
-            curve: Curves.easeOutCubic,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 32,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFDADCE0),
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                Row(
-                  children: [
-                    const Icon(Icons.shop_rounded, color: _green, size: 22),
-                    const SizedBox(width: 8),
-                    const Text(
-                      'Google Play',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w500,
-                        color: _muted,
-                      ),
-                    ),
-                    const Spacer(),
-                    if (stage == _PayStage.review)
-                      IconButton(
-                        onPressed: () => Navigator.pop(context, false),
-                        icon: const Icon(Icons.close_rounded, color: _muted),
-                      ),
-                  ],
-                ),
-                const Divider(height: 24, color: Color(0xFFE8EAED)),
-                AnimatedSwitcher(
-                  duration: _motion(context, 260),
-                  child: switch (stage) {
-                    _PayStage.done => Padding(
-                      key: const ValueKey('done'),
-                      padding: const EdgeInsets.symmetric(vertical: 28),
-                      child: Column(
-                        children: [
-                          const AnimatedCheck(color: _green, filled: true),
-                          const SizedBox(height: 16),
-                          const Text(
-                            'Payment successful',
-                            style: TextStyle(
-                              fontSize: 20,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                          const SizedBox(height: 6),
-                          Text(
-                            'Acatrain ${plan.label} is now active',
-                            style: const TextStyle(color: _muted),
-                          ),
-                        ],
-                      ),
-                    ),
-                    _ => Column(
-                      key: const ValueKey('review'),
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            _PlanThumb(plan: plan, radius: 12),
-                            const SizedBox(width: 14),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    'Acatrain ${plan.label}',
-                                    style: const TextStyle(
-                                      fontSize: 18,
-                                      fontWeight: FontWeight.w500,
-                                    ),
-                                  ),
-                                  const Text(
-                                    'Acatrain',
-                                    style: TextStyle(color: _muted),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 18),
-                        _playRow(
-                          'Subscription',
-                          '${plan.priceLabel}/month',
-                          bold: true,
-                        ),
-                        _playRow('Billing starts', 'Today'),
-                        const SizedBox(height: 10),
-                        Container(
-                          padding: const EdgeInsets.all(14),
-                          decoration: BoxDecoration(
-                            border: Border.all(color: const Color(0xFFE8EAED)),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: const Row(
-                            children: [
-                              Icon(Icons.credit_card_rounded, color: _muted),
-                              SizedBox(width: 12),
-                              Expanded(child: Text('Demo Visa ·· 4242')),
-                              Icon(Icons.chevron_right_rounded, color: _muted),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        const Text(
-                          'Cancel anytime in Settings. This is a demo: no '
-                          'money moves and Google Play is not contacted.',
-                          style: TextStyle(fontSize: 12, color: _muted),
-                        ),
-                        const SizedBox(height: 18),
-                        SizedBox(
-                          width: double.infinity,
-                          height: 48,
-                          child: FilledButton(
-                            style: FilledButton.styleFrom(
-                              backgroundColor: _green,
-                              disabledBackgroundColor: _green,
-                              foregroundColor: Colors.white,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(24),
-                              ),
-                              minimumSize: const Size(0, 48),
-                            ),
-                            onPressed:
-                                stage == _PayStage.review ? () => pay() : null,
-                            child:
-                                stage == _PayStage.processing
-                                    ? const SizedBox.square(
-                                      dimension: 22,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2.5,
-                                        color: Colors.white,
-                                      ),
-                                    )
-                                    : const Text(
-                                      'Subscribe',
-                                      style: TextStyle(
-                                        fontSize: 15,
-                                        fontWeight: FontWeight.w500,
-                                      ),
-                                    ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  },
-                ),
-                const SizedBox(height: 12),
-                const _DemoTag(color: _muted),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _playRow(String label, String value, {bool bold = false}) => Padding(
-    padding: const EdgeInsets.symmetric(vertical: 4),
-    child: Row(
-      children: [
-        Expanded(child: Text(label, style: const TextStyle(color: _muted))),
-        Text(
-          value,
-          style: TextStyle(
-            fontWeight: bold ? FontWeight.w600 : FontWeight.w400,
-          ),
-        ),
-      ],
-    ),
-  );
-}
-
-class _PlanThumb extends StatelessWidget {
-  const _PlanThumb({required this.plan, this.radius = 10, this.size = 52});
-  final AcatrainPlan plan;
-  final double radius;
-  final double size;
-
-  @override
-  Widget build(BuildContext context) => Container(
-    width: size,
-    height: size,
-    decoration: BoxDecoration(
-      gradient: plan.gradient,
-      borderRadius: BorderRadius.circular(radius),
-    ),
-    child: Icon(
-      Icons.school_rounded,
-      color: const Color(0xFFFFF8E7),
-      size: size * 0.5,
-    ),
-  );
-}
-
-// ---------------------------------------------------------------------------
-// iOS App Store style
-// ---------------------------------------------------------------------------
-
-class _AppleSheet extends StatefulWidget {
-  const _AppleSheet({required this.plan});
-  final AcatrainPlan plan;
-
-  @override
-  State<_AppleSheet> createState() => _AppleSheetState();
-}
-
-class _AppleSheetState extends State<_AppleSheet>
-    with _FakePayment, TickerProviderStateMixin {
-  static const _blue = Color(0xFF0A84FF);
-
-  late final AnimationController _pulse = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 1100),
-  )..repeat(reverse: true);
-
-  @override
-  void dispose() {
-    _pulse.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final dark = Theme.of(context).brightness == Brightness.dark;
-    final bg = dark ? const Color(0xFF1C1C1E) : const Color(0xFFF2F2F7);
-    final card = dark ? const Color(0xFF2C2C2E) : Colors.white;
-    final ink = dark ? Colors.white : Colors.black;
-    const muted = Color(0xFF8E8E93);
-    final plan = widget.plan;
-    return PopScope(
-      canPop: stage == _PayStage.review,
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          Container(
-            decoration: BoxDecoration(
-              color: bg,
-              borderRadius: const BorderRadius.vertical(
-                top: Radius.circular(14),
-              ),
-            ),
-            padding: const EdgeInsets.fromLTRB(16, 14, 16, 28),
-            child: DefaultTextStyle(
-              style: TextStyle(fontSize: 15, color: ink),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Row(
-                    children: [
-                      Text(
-                        'App Store',
-                        style: TextStyle(
-                          fontSize: 17,
-                          fontWeight: FontWeight.w600,
-                          color: ink,
-                        ),
-                      ),
-                      const Spacer(),
-                      if (stage == _PayStage.review)
-                        GestureDetector(
-                          onTap: () => Navigator.pop(context, false),
-                          child: Container(
-                            width: 30,
-                            height: 30,
-                            decoration: BoxDecoration(
-                              color: muted.withValues(alpha: 0.24),
-                              shape: BoxShape.circle,
-                            ),
-                            child: Icon(
-                              Icons.close_rounded,
-                              size: 18,
-                              color: muted,
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
-                  const SizedBox(height: 14),
-                  Container(
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      color: card,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Column(
-                      children: [
-                        Row(
-                          children: [
-                            _PlanThumb(plan: plan, radius: 12, size: 56),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    'Acatrain ${plan.label}',
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                  const Text(
-                                    'Acatrain',
-                                    style: TextStyle(color: muted),
-                                  ),
-                                  const Text(
-                                    'Subscription',
-                                    style: TextStyle(
-                                      color: muted,
-                                      fontSize: 13,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                        Divider(
-                          height: 24,
-                          color: muted.withValues(alpha: 0.3),
-                        ),
-                        _appleRow(
-                          'Price',
-                          '${plan.priceLabel} per month',
-                          muted,
-                        ),
-                        _appleRow('Account', 'demo@example.com', muted),
-                        _appleRow('Pay with', 'Demo Card ···· 4242', muted),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 26),
-                  SizedBox(
-                    height: 132,
-                    child: AnimatedSwitcher(
-                      duration: _motion(context, 260),
-                      child: switch (stage) {
-                        _PayStage.review => GestureDetector(
-                          key: const ValueKey('confirm'),
-                          onTap: () => pay(processingMs: 1500),
-                          behavior: HitTestBehavior.opaque,
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(
-                                Icons.phone_iphone_rounded,
-                                size: 44,
-                                color: ink,
-                              ),
-                              const SizedBox(height: 10),
-                              Text(
-                                'Double-Click to Pay',
-                                style: TextStyle(
-                                  fontSize: 17,
-                                  fontWeight: FontWeight.w600,
-                                  color: ink,
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              const Text(
-                                'Tap here to confirm with Side Button',
-                                style: TextStyle(color: muted, fontSize: 13),
-                              ),
-                            ],
-                          ),
-                        ),
-                        _PayStage.processing => Column(
-                          key: const ValueKey('faceid'),
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            _FaceScan(color: _blue),
-                            const SizedBox(height: 12),
-                            Text('Face ID', style: TextStyle(color: ink)),
-                          ],
-                        ),
-                        _PayStage.done => Column(
-                          key: const ValueKey('done'),
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            const AnimatedCheck(color: _blue, size: 64),
-                            const SizedBox(height: 12),
-                            Text(
-                              'Done',
-                              style: TextStyle(
-                                fontSize: 17,
-                                fontWeight: FontWeight.w600,
-                                color: ink,
-                              ),
-                            ),
-                          ],
-                        ),
-                      },
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  const _DemoTag(color: muted),
-                ],
-              ),
-            ),
-          ),
-          // The glowing side-button cue on the sheet's right edge.
-          if (stage == _PayStage.review)
-            Positioned(
-              right: 0,
-              top: 18,
-              child: AnimatedBuilder(
-                animation: _pulse,
-                builder:
-                    (context, _) => Container(
-                      width: 6,
-                      height: 64,
-                      decoration: BoxDecoration(
-                        color: _blue.withValues(
-                          alpha: 0.35 + 0.65 * _pulse.value,
-                        ),
-                        borderRadius: const BorderRadius.horizontal(
-                          left: Radius.circular(3),
-                        ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: _blue.withValues(alpha: 0.6 * _pulse.value),
-                            blurRadius: 12,
-                          ),
-                        ],
-                      ),
-                    ),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-
-  Widget _appleRow(String label, String value, Color muted) => Padding(
-    padding: const EdgeInsets.symmetric(vertical: 5),
-    child: Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        SizedBox(
-          width: 84,
-          child: Text(label, style: TextStyle(color: muted, fontSize: 13)),
-        ),
-        Expanded(child: Text(value)),
-      ],
-    ),
-  );
-}
-
-/// A pulsing face glyph with a scanning line, in the spirit of Face ID.
-class _FaceScan extends StatefulWidget {
-  const _FaceScan({required this.color});
-  final Color color;
-
-  @override
-  State<_FaceScan> createState() => _FaceScanState();
-}
-
-class _FaceScanState extends State<_FaceScan>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 900),
-  )..repeat();
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) => AnimatedBuilder(
-    animation: _controller,
-    builder:
-        (context, _) => CustomPaint(
-          size: const Size.square(64),
-          painter: _FacePainter(_controller.value, widget.color),
-        ),
-  );
-}
-
-class _FacePainter extends CustomPainter {
-  _FacePainter(this.t, this.color);
-  final double t;
-  final Color color;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final w = size.width;
-    final paint =
-        Paint()
-          ..color = color
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 3.2
-          ..strokeCap = StrokeCap.round;
-    // Corner brackets.
-    const c = 14.0;
-    for (final (x, y, dx, dy) in [
-      (0.0, 0.0, 1.0, 1.0),
-      (w, 0.0, -1.0, 1.0),
-      (0.0, w, 1.0, -1.0),
-      (w, w, -1.0, -1.0),
-    ]) {
-      canvas.drawPath(
-        Path()
-          ..moveTo(x, y + dy * c)
-          ..lineTo(x, y)
-          ..lineTo(x + dx * c, y),
-        paint,
-      );
-    }
-    // Eyes, nose and smile.
-    canvas.drawLine(Offset(w * .36, w * .36), Offset(w * .36, w * .44), paint);
-    canvas.drawLine(Offset(w * .64, w * .36), Offset(w * .64, w * .44), paint);
-    canvas.drawPath(
-      Path()
-        ..moveTo(w * .52, w * .36)
-        ..lineTo(w * .52, w * .56)
-        ..lineTo(w * .47, w * .56),
-      paint,
-    );
-    canvas.drawArc(
-      Rect.fromCenter(
-        center: Offset(w * .5, w * .6),
-        width: w * .36,
-        height: w * .2,
-      ),
-      0.25,
-      math.pi - 0.5,
-      false,
-      paint,
-    );
-    // Scan line.
-    final y = w * (0.12 + 0.76 * (0.5 - 0.5 * math.cos(t * math.pi * 2)));
-    canvas.drawLine(
-      Offset(w * .1, y),
-      Offset(w * .9, y),
-      Paint()
-        ..color = color.withValues(alpha: 0.55)
-        ..strokeWidth = 2,
-    );
-  }
-
-  @override
-  bool shouldRepaint(_FacePainter old) => old.t != t || old.color != color;
-}
-
-// ---------------------------------------------------------------------------
-// Stripe web checkout style
-// ---------------------------------------------------------------------------
-
-class _StripeCheckout extends StatefulWidget {
-  const _StripeCheckout({required this.plan});
-  final AcatrainPlan plan;
-
-  @override
-  State<_StripeCheckout> createState() => _StripeCheckoutState();
-}
-
-class _StripeCheckoutState extends State<_StripeCheckout> with _FakePayment {
-  static const _blurple = Color(0xFF635BFF);
-  static const _ink = Color(0xFF30313D);
-  static const _muted = Color(0xFF6D6E78);
-  static const _line = Color(0xFFE6E6EB);
-
-  @override
-  Widget build(BuildContext context) {
-    final plan = widget.plan;
-    return PopScope(
-      canPop: stage == _PayStage.review,
-      child: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 440),
-            child: Material(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(12),
-              clipBehavior: Clip.antiAlias,
-              elevation: 24,
-              child: SingleChildScrollView(
-                child: DefaultTextStyle(
-                  style: const TextStyle(fontSize: 14, color: _ink),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Container(
-                        color: const Color(0xFFF6F9FC),
-                        padding: const EdgeInsets.fromLTRB(24, 18, 12, 20),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                _PlanThumb(plan: plan, radius: 6, size: 28),
-                                const SizedBox(width: 10),
-                                const Flexible(
-                                  child: Text(
-                                    'Acatrain',
-                                    overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 6,
-                                    vertical: 2,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFFFFDE92),
-                                    borderRadius: BorderRadius.circular(4),
-                                  ),
-                                  child: const Text(
-                                    'TEST MODE',
-                                    style: TextStyle(
-                                      fontSize: 10,
-                                      fontWeight: FontWeight.w700,
-                                      color: Color(0xFF983705),
-                                    ),
-                                  ),
-                                ),
-                                const Spacer(),
-                                if (stage == _PayStage.review)
-                                  IconButton(
-                                    onPressed:
-                                        () => Navigator.pop(context, false),
-                                    icon: const Icon(
-                                      Icons.close_rounded,
-                                      color: _muted,
-                                    ),
-                                  ),
-                              ],
-                            ),
-                            const SizedBox(height: 14),
-                            Text(
-                              'Subscribe to Acatrain ${plan.label}',
-                              style: const TextStyle(color: _muted),
-                            ),
-                            const SizedBox(height: 4),
-                            Row(
-                              crossAxisAlignment: CrossAxisAlignment.end,
-                              children: [
-                                Text(
-                                  plan.priceLabel,
-                                  style: const TextStyle(
-                                    fontSize: 34,
-                                    fontWeight: FontWeight.w600,
-                                    color: _ink,
-                                  ),
-                                ),
-                                const Padding(
-                                  padding: EdgeInsets.only(bottom: 6, left: 6),
-                                  child: Text(
-                                    'per\nmonth',
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      height: 1.15,
-                                      color: _muted,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(24, 20, 24, 24),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            _label('Email'),
-                            _field('demo@example.com'),
-                            const SizedBox(height: 14),
-                            _label('Card information'),
-                            Container(
-                              decoration: BoxDecoration(
-                                border: Border.all(color: _line),
-                                borderRadius: BorderRadius.circular(6),
-                              ),
-                              child: Column(
-                                children: [
-                                  const _StripeCell(
-                                    '4242 4242 4242 4242',
-                                    trailing: Icon(
-                                      Icons.credit_card_rounded,
-                                      size: 18,
-                                      color: _blurple,
-                                    ),
-                                  ),
-                                  const Divider(height: 1, color: _line),
-                                  IntrinsicHeight(
-                                    child: Row(
-                                      children: const [
-                                        Expanded(child: _StripeCell('12 / 34')),
-                                        VerticalDivider(width: 1, color: _line),
-                                        Expanded(child: _StripeCell('123')),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(height: 14),
-                            _label('Name on card'),
-                            _field('Demo Learner'),
-                            const SizedBox(height: 22),
-                            AnimatedContainer(
-                              duration: _motion(context, 280),
-                              curve: Curves.easeOutCubic,
-                              height: 46,
-                              decoration: BoxDecoration(
-                                color:
-                                    stage == _PayStage.done
-                                        ? const Color(0xFF1EA672)
-                                        : _blurple,
-                                borderRadius: BorderRadius.circular(6),
-                              ),
-                              child: Material(
-                                type: MaterialType.transparency,
-                                child: InkWell(
-                                  onTap:
-                                      stage == _PayStage.review
-                                          ? () => pay(processingMs: 1800)
-                                          : null,
-                                  child: Center(
-                                    child: AnimatedSwitcher(
-                                      duration: _motion(context, 220),
-                                      child: switch (stage) {
-                                        _PayStage.review => Text(
-                                          'Subscribe · ${plan.priceLabel}',
-                                          key: const ValueKey('label'),
-                                          style: const TextStyle(
-                                            color: Colors.white,
-                                            fontSize: 16,
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                        ),
-                                        _PayStage.processing =>
-                                          const SizedBox.square(
-                                            key: ValueKey('spin'),
-                                            dimension: 20,
-                                            child: CircularProgressIndicator(
-                                              strokeWidth: 2.4,
-                                              color: Colors.white,
-                                            ),
-                                          ),
-                                        _PayStage.done => const AnimatedCheck(
-                                          key: ValueKey('check'),
-                                          color: Colors.white,
-                                          size: 28,
-                                        ),
-                                      },
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(height: 14),
-                            const Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(
-                                  Icons.lock_outline_rounded,
-                                  size: 14,
-                                  color: _muted,
-                                ),
-                                SizedBox(width: 6),
-                                Flexible(
-                                  child: Text(
-                                    'Stripe-style checkout · simulated',
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      color: _muted,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 6),
-                            const _DemoTag(color: _muted),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _label(String text) => Padding(
-    padding: const EdgeInsets.only(bottom: 6),
-    child: Text(
-      text,
-      style: const TextStyle(
-        fontSize: 13,
-        color: _muted,
-        fontWeight: FontWeight.w500,
-      ),
-    ),
-  );
-
-  Widget _field(String value) => Container(
-    decoration: BoxDecoration(
-      border: Border.all(color: _line),
-      borderRadius: BorderRadius.circular(6),
-    ),
-    child: _StripeCell(value),
-  );
-}
-
-class _StripeCell extends StatelessWidget {
-  const _StripeCell(this.value, {this.trailing});
-  final String value;
-  final Widget? trailing;
-
-  @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
-    child: Row(
-      children: [Expanded(child: Text(value)), if (trailing != null) trailing!],
-    ),
-  );
-}
-
 // ---------------------------------------------------------------------------
 // Welcome moment
 // ---------------------------------------------------------------------------
 
-Future<void> _celebrate(BuildContext context, AcatrainPlan plan) =>
-    showGeneralDialog<void>(
-      context: context,
-      barrierDismissible: true,
-      barrierLabel: 'Close',
-      barrierColor: Colors.transparent,
-      transitionDuration: _motion(context, 520),
-      pageBuilder: (_, _, _) => _Welcome(plan: plan),
-      transitionBuilder:
-          (context, animation, _, child) => FadeTransition(
-            opacity: CurvedAnimation(parent: animation, curve: Curves.easeOut),
-            child: child,
-          ),
-    );
+Future<void> _celebrate(
+  BuildContext context,
+  DemoSubscription subscription,
+  String? holder,
+) => showGeneralDialog<void>(
+  context: context,
+  barrierDismissible: true,
+  barrierLabel: 'Close',
+  barrierColor: Colors.transparent,
+  transitionDuration: demoMotion(context, 520),
+  pageBuilder:
+      (_, _, _) => _Welcome(subscription: subscription, holder: holder),
+  transitionBuilder:
+      (context, animation, _, child) => FadeTransition(
+        opacity: CurvedAnimation(parent: animation, curve: Curves.easeOut),
+        child: child,
+      ),
+);
 
 class _Welcome extends StatefulWidget {
-  const _Welcome({required this.plan});
-  final AcatrainPlan plan;
+  const _Welcome({required this.subscription, this.holder});
+  final DemoSubscription subscription;
+  final String? holder;
 
   @override
   State<_Welcome> createState() => _WelcomeState();
@@ -1744,14 +1899,15 @@ class _WelcomeState extends State<_Welcome>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller = AnimationController(
     vsync: this,
-    duration: const Duration(milliseconds: 2400),
+    duration: const Duration(milliseconds: 3200),
   )..forward();
   Timer? _autoClose;
 
   @override
   void initState() {
     super.initState();
-    _autoClose = Timer(const Duration(milliseconds: 3600), () {
+    HapticFeedback.heavyImpact();
+    _autoClose = Timer(const Duration(milliseconds: 5200), () {
       if (mounted) Navigator.maybePop(context);
     });
   }
@@ -1765,8 +1921,10 @@ class _WelcomeState extends State<_Welcome>
 
   @override
   Widget build(BuildContext context) {
-    final plan = widget.plan;
+    final subscription = widget.subscription;
+    final plan = subscription.plan;
     final theme = Theme.of(context);
+    const ink = Color(0xFFFFF8E7);
     return GestureDetector(
       onTap: () => Navigator.maybePop(context),
       child: Material(
@@ -1781,41 +1939,61 @@ class _WelcomeState extends State<_Welcome>
                   builder:
                       (context, _) => CustomPaint(
                         painter: _SparklePainter(_controller.value, plan.shine),
+                        foregroundPainter: _ConfettiPainter(_controller.value, [
+                          plan.shine,
+                          ink,
+                          Color.lerp(plan.deep, plan.shine, 0.5)!,
+                        ]),
                       ),
                 ),
               ),
               Center(
-                child: Padding(
+                child: SingleChildScrollView(
                   padding: const EdgeInsets.all(32),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
+                      // The new card flips in, like it just arrived.
                       TweenAnimationBuilder<double>(
                         tween: Tween(begin: 0, end: 1),
-                        duration: _motion(context, 900),
-                        curve: Curves.elasticOut,
+                        duration: demoMotion(context, 1100),
+                        curve: Curves.easeOutBack,
                         builder:
-                            (context, t, child) =>
-                                Transform.scale(scale: t, child: child),
-                        child: ExpressiveBadge(
-                          shape: ExpressiveShape.sunny,
-                          size: 112,
-                          color: plan.shine,
-                          child: Icon(
-                            Icons.workspace_premium_rounded,
-                            size: 56,
-                            color: plan.deep,
+                            (context, t, child) => Transform(
+                              alignment: Alignment.center,
+                              transform:
+                                  Matrix4.identity()
+                                    ..setEntry(3, 2, 0.0015)
+                                    ..rotateY((1 - t) * math.pi / 2)
+                                    ..scaleByDouble(
+                                      0.8 + 0.2 * t,
+                                      0.8 + 0.2 * t,
+                                      1,
+                                      1,
+                                    ),
+                              child: Opacity(
+                                opacity: t.clamp(0.0, 1.0),
+                                child: child,
+                              ),
+                            ),
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 340),
+                          child: MemberCard(
+                            plan: plan,
+                            holder: widget.holder,
+                            number: subscription.memberNumber,
+                            since: subscription.memberSince,
                           ),
                         ),
                       ),
-                      const SizedBox(height: 28),
+                      const SizedBox(height: 32),
                       Text(
                         isCantonese(context)
                             ? '歡迎使用 ${plan.label}'
                             : 'Welcome to ${plan.label}',
                         textAlign: TextAlign.center,
                         style: theme.textTheme.displaySmall?.copyWith(
-                          color: const Color(0xFFFFF8E7),
+                          color: ink,
                         ),
                       ),
                       const SizedBox(height: 10),
@@ -1825,16 +2003,24 @@ class _WelcomeState extends State<_Welcome>
                             : 'Your ${plan.themeName} theme is on.',
                         textAlign: TextAlign.center,
                         style: theme.textTheme.titleMedium?.copyWith(
-                          color: const Color(
-                            0xFFFFF8E7,
-                          ).withValues(alpha: 0.85),
+                          color: ink.withValues(alpha: 0.85),
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        isCantonese(context)
+                            ? '下次續訂：${formatPlanDate(context, subscription.renewsAt)}'
+                            : 'Renews ${formatPlanDate(context, subscription.renewsAt)}',
+                        textAlign: TextAlign.center,
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: ink.withValues(alpha: 0.75),
                         ),
                       ),
                       const SizedBox(height: 24),
                       Text(
                         tr(context, 'Demo only. Nothing was charged.'),
                         style: theme.textTheme.bodySmall?.copyWith(
-                          color: const Color(0xFFFFF8E7).withValues(alpha: 0.7),
+                          color: ink.withValues(alpha: 0.7),
                         ),
                       ),
                     ],
@@ -1847,6 +2033,48 @@ class _WelcomeState extends State<_Welcome>
       ),
     );
   }
+}
+
+/// Ribbons of confetti drifting down from above the screen.
+class _ConfettiPainter extends CustomPainter {
+  _ConfettiPainter(this.t, this.colors);
+  final double t;
+  final List<Color> colors;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final random = math.Random(11);
+    for (var i = 0; i < 70; i++) {
+      final x = random.nextDouble() * size.width;
+      final delay = random.nextDouble() * 0.35;
+      final fall = 0.55 + random.nextDouble() * 0.6;
+      final p = ((t - delay) / (1 - delay)).clamp(0.0, 1.0);
+      if (p == 0) continue;
+      final y = -20 + (size.height + 40) * p * fall;
+      final sway = math.sin((p * 6 + i) * math.pi) * 14;
+      final spin = p * math.pi * (4 + random.nextDouble() * 6);
+      final w = 5 + random.nextDouble() * 5;
+      final h = 9 + random.nextDouble() * 7;
+      final fade = p > 0.8 ? (1 - p) / 0.2 : 1.0;
+      canvas
+        ..save()
+        ..translate(x + sway, y)
+        ..rotate(spin)
+        ..scale(1, math.cos(spin * 1.3).abs() * 0.8 + 0.2);
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromCenter(center: Offset.zero, width: w, height: h),
+          const Radius.circular(1.5),
+        ),
+        Paint()
+          ..color = colors[i % colors.length].withValues(alpha: 0.9 * fade),
+      );
+      canvas.restore();
+    }
+  }
+
+  @override
+  bool shouldRepaint(_ConfettiPainter old) => old.t != t;
 }
 
 class _SparklePainter extends CustomPainter {

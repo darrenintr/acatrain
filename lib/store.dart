@@ -63,6 +63,32 @@ class AppStore extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// The pretend billing record behind [plan] (renewal date, payment
+  /// method, receipts), or null when nothing was ever "bought". Stored as
+  /// JSON and interpreted by `DemoSubscription` in subscription.dart.
+  Map<String, dynamic>? get demoSubscription {
+    final raw = prefs.getString('demo-subscription');
+    if (raw == null) return null;
+    try {
+      return jsonDecode(raw) as Map<String, dynamic>;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> setDemoSubscription(
+    Map<String, dynamic>? value, {
+    String? plan,
+  }) async {
+    if (value == null) {
+      await prefs.remove('demo-subscription');
+    } else {
+      await prefs.setString('demo-subscription', jsonEncode(value));
+    }
+    if (plan != null) await prefs.setString('demo-plan', plan);
+    notifyListeners();
+  }
+
   String get _progressKey => 'progress:${uid ?? 'guest'}';
 
   Uri _uri(String path) {

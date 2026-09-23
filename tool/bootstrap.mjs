@@ -86,6 +86,81 @@ if (requested.includes('macos')) {
   }
 }
 
+// App icons, names and launch colours. Only freshly generated runners are
+// branded unless --icons is passed, so an existing runner is never changed
+// behind your back. Re-render the icons with tool/generate_icons.py.
+const brand = process.argv.includes('--icons')
+  ? requested
+  : missing;
+const icons = 'packaging/icons';
+const copyIcon = (from, to) => {
+  if (!fs.existsSync(path.dirname(to))) return;
+  fs.copyFileSync(path.join(icons, from), to);
+};
+const patch = (file, edit) => {
+  if (!fs.existsSync(file)) return;
+  const before = fs.readFileSync(file, 'utf8');
+  const after = edit(before);
+  if (after !== before) fs.writeFileSync(file, after);
+};
+
+if (brand.includes('web') && fs.existsSync('web')) {
+  for (const name of ['Icon-192.png', 'Icon-512.png', 'Icon-maskable-192.png', 'Icon-maskable-512.png', 'apple-touch-icon.png']) {
+    fs.mkdirSync('web/icons', { recursive: true });
+    copyIcon(`web/icons/${name}`, `web/icons/${name}`);
+  }
+  copyIcon('web/favicon.png', 'web/favicon.png');
+  patch('web/manifest.json', json => {
+    const manifest = JSON.parse(json);
+    Object.assign(manifest, {
+      name: 'Acatrain',
+      short_name: 'Acatrain',
+      description: 'Offline-first study sets.',
+      background_color: '#F6FBF4',
+      theme_color: '#36684F',
+    });
+    return `${JSON.stringify(manifest, null, 4)}\n`;
+  });
+  patch('web/index.html', html => {
+    html = html
+      .replace(/content="acatrain"/g, 'content="Acatrain"')
+      .replace('<title>acatrain</title>', '<title>Acatrain</title>')
+      .replace('href="icons/Icon-192.png"', 'href="icons/apple-touch-icon.png"');
+    if (!html.includes('acatrain-launch-surface')) {
+      // Paint the app surface before Flutter boots so the launch animation
+      // starts from the same colour instead of a white flash.
+      html = html.replace(
+        '</head>',
+        '  <meta name="theme-color" content="#36684F">\n' +
+          '  <style id="acatrain-launch-surface">\n' +
+          '    html, body { background: #F6FBF4; }\n' +
+          '    @media (prefers-color-scheme: dark) { html, body { background: #0F1511; } }\n' +
+          '  </style>\n' +
+          '</head>',
+      );
+    }
+    return html;
+  });
+}
+
+if (brand.includes('macos')) {
+  const target = 'macos/Runner/Assets.xcassets/AppIcon.appiconset';
+  for (const size of [16, 32, 64, 128, 256, 512, 1024]) {
+    copyIcon(`macos/AppIcon.appiconset/app_icon_${size}.png`, `${target}/app_icon_${size}.png`);
+  }
+}
+
+if (brand.includes('windows')) {
+  copyIcon('windows/app_icon.ico', 'windows/runner/resources/app_icon.ico');
+  patch('windows/runner/main.cpp', text => text.replace('L"acatrain"', 'L"Acatrain"'));
+}
+
+if (brand.includes('linux')) {
+  patch('linux/runner/my_application.cc', text =>
+    text.replace(/set_title\((\w+), "acatrain"\)/g, 'set_title($1, "Acatrain")'),
+  );
+}
+
 if (missing.length === 0) {
   console.log('Requested platform runners are already present; nothing was regenerated.');
 } else {
