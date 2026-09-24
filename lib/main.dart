@@ -593,7 +593,7 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
               if (store.uid == null) {
                 _login();
               } else {
-                store.signOut();
+                unawaited(store.signOut());
               }
               break;
           }
