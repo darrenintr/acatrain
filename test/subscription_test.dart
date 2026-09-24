@@ -5,11 +5,19 @@ import 'package:acatrain/main.dart';
 import 'package:acatrain/store.dart';
 import 'package:acatrain/subscription.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  setUp(() {
+    FlutterSecureStorage.setMockInitialValues({});
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(const MethodChannel('acatrain/icon'),
+            (call) async => null);
+  });
   Future<AppStore> store() async {
     SharedPreferences.setMockInitialValues({});
     final state = AppStore(await SharedPreferences.getInstance());
