@@ -37,7 +37,7 @@ class SetPage extends StatelessWidget {
     final due = store.dueItems(set);
     final practised = store.practisedCount(set);
     final style = SubjectStyle.of(context, set.subject);
-    final progress = set.items.isEmpty ? 0.0 : practised / set.items.length;
+    final progress = store.completion(set);
 
     return Scaffold(
       appBar: AppBar(),
