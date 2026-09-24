@@ -8,7 +8,9 @@ class PlanIcon {
   static Future<void> apply(String plan) async {
     if (kIsWeb) return;
     if (defaultTargetPlatform != TargetPlatform.android &&
-        defaultTargetPlatform != TargetPlatform.iOS) return;
+        defaultTargetPlatform != TargetPlatform.iOS) {
+      return;
+    }
     try {
       await _channel.invokeMethod<void>('setPlan', {'plan': plan});
     } on PlatformException {
