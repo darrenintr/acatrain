@@ -721,7 +721,7 @@ class AppStore extends ChangeNotifier {
         notifyListeners();
         throw const FormatException('Your session expired. Please sign in again.');
       }
-      throw const Exception('Could not refresh the session. Check your connection.');
+      throw Exception('Could not refresh the session. Check your connection.');
     }
     final data = jsonDecode(response.body) as Map<String, dynamic>;
     if (data['user_id'] != uid) {
