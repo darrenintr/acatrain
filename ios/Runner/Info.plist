@@ -6,6 +6,18 @@
 	<string>187437119709-gf9q44es1kn3hbujvn9h0kjphj91j2s0.apps.googleusercontent.com</string>
 	<key>GIDServerClientID</key>
 	<string>187437119709-ovse5qso4uj31ibc7oviihn04lj2k5lr.apps.googleusercontent.com</string>
+	<key>CFBundleIcons</key>
+	<dict>
+		<key>CFBundleAlternateIcons</key>
+		<dict>
+			<key>StarterIcon</key>
+			<dict><key>CFBundleIconFiles</key><array><string>StarterIcon</string></array></dict>
+			<key>ProIcon</key>
+			<dict><key>CFBundleIconFiles</key><array><string>ProIcon</string></array></dict>
+			<key>MaxIcon</key>
+			<dict><key>CFBundleIconFiles</key><array><string>MaxIcon</string></array></dict>
+		</dict>
+	</dict>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
