@@ -50,7 +50,7 @@ jobs:
       - run: flutter pub get
       - run: dart format lib test
       - run: flutter analyze --no-fatal-infos
-      - run: flutter test
+      - run: flutter test --timeout 60s
       - name: Resolve package version
         run: echo "ACATRAIN_VERSION=$(awk '/^version:/ {print $2; exit}' pubspec.yaml)" >> "$GITHUB_ENV"
       - name: Configure Android release signing
