@@ -262,7 +262,7 @@ void main() {
       expect(store.uid, 'password-uid');
       final set = store.bundle.sets.first;
       await store.record(set, set.items.first, false);
-      store.signOut();
+      await store.signOut();
       expect(await store.signIn('a@example.com', 'password'), true);
       expect(store.isWrong(set, set.items.first), true);
       store.dispose();
