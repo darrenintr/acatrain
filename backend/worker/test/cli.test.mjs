@@ -67,8 +67,8 @@ test('CLI and stdio publishing integration', { timeout: 20000 }, async t => {
       await run(['tool/publish.mjs', '--publish', 'assets/seed.json']);
       const manifest = await (await fetch(`${base}/v1/manifest`)).json();
       const release = await (await fetch(`${base}/v1/releases/${manifest.releaseId}`)).json();
-      assert.equal(release.sets.length, 3);
-      assert.equal(release.sets.reduce((n, s) => n + s.items.length, 0), 19);
+      assert.equal(release.sets.length, 5);
+      assert.equal(release.sets.reduce((n, s) => n + s.items.length, 0), 32);
     });
   } finally { server.close(); server.closeAllConnections(); }
 });

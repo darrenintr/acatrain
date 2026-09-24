@@ -3,10 +3,12 @@ import 'package:acatrain/models.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  test('bundled content has three original study sets and 19 items', () {
+  test('bundled content includes the English revision sets', () {
     final bundle = ContentBundle.parse(File('assets/seed.json').readAsStringSync());
-    expect(bundle.sets.length, 3);
-    expect(bundle.sets.fold<int>(0, (n, s) => n + s.items.length), 19);
+    expect(bundle.sets.length, 5);
+    expect(bundle.sets.fold<int>(0, (n, s) => n + s.items.length), 32);
+    expect(bundle.sets.firstWhere((s) => s.id == 'english-conversational-vocab').items.length, 5);
+    expect(bundle.sets.firstWhere((s) => s.id == 'english-paper-3b-phrases').items.length, 8);
   });
   test('unknown schema and unsupported renderer are rejected', () {
     final source = File('assets/seed.json').readAsStringSync();

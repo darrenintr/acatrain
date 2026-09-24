@@ -99,8 +99,27 @@ void main() {
     await prefs.setString('content:v1', 'broken');
     final store = AppStore(prefs);
     await store.load(seed: seed);
-    expect(store.bundle.sets.length, 3);
+    expect(store.bundle.sets.length, 5);
     expect(store.releaseId, 'bundled-demo');
+    store.dispose();
+  });
+  test('older cached content gains bundled English sets without losing its release', () async {
+    final prefs = await SharedPreferences.getInstance();
+    final original = jsonDecode(seed) as Map<String, dynamic>;
+    final oldContent = jsonEncode({
+      ...original,
+      'sets': (original['sets'] as List).sublist(0, 3),
+    });
+    await prefs.setString('content:v1', jsonEncode({
+      'releaseId': 'older-release',
+      'payload': oldContent,
+      'sha256': sha256.convert(utf8.encode(oldContent)).toString(),
+    }));
+    final store = AppStore(prefs);
+    await store.load(seed: seed);
+    expect(store.releaseId, 'older-release');
+    expect(store.bundle.sets.length, 5);
+    expect(store.bundle.sets.last.id, 'english-paper-3b-phrases');
     store.dispose();
   });
   test(
