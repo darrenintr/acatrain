@@ -19,15 +19,15 @@ void main() {
         'Updated economics',
       );
       final client = MockClient(
-        (r) async => http.Response(
-          r.url.path.endsWith('manifest')
+        (r) async => http.Response.bytes(
+          utf8.encode(r.url.path.endsWith('manifest')
               ? jsonEncode({
                 'releaseId': 'r1',
                 'schemaVersion': 1,
                 'minAppBuild': 1,
                 'sha256': sha256.convert(utf8.encode(payload)).toString(),
               })
-              : payload,
+              : payload),
           200,
         ),
       );
@@ -55,15 +55,15 @@ void main() {
       await SharedPreferences.getInstance(),
       apiUrl: 'https://study.example',
       client: MockClient(
-        (r) async => http.Response(
-          r.url.path.endsWith('manifest')
+        (r) async => http.Response.bytes(
+          utf8.encode(r.url.path.endsWith('manifest')
               ? jsonEncode({
                 'releaseId': 'r1',
                 'schemaVersion': 1,
                 'minAppBuild': 1,
                 'sha256': 'invalid',
               })
-              : seed,
+              : seed),
           200,
         ),
       ),
