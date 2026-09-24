@@ -6,11 +6,15 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   final seed = File('assets/seed.json').readAsStringSync();
-  setUp(() => SharedPreferences.setMockInitialValues({}));
+  setUp(() {
+    SharedPreferences.setMockInitialValues({});
+    FlutterSecureStorage.setMockInitialValues({});
+  });
   test(
     'valid release swaps only after download and persists across restart',
     () async {
@@ -94,6 +98,49 @@ void main() {
       reopened.dispose();
     },
   );
+  test('session survives restart and expired token refreshes', () async {
+    final prefs = await SharedPreferences.getInstance();
+    var refreshes = 0;
+    final client = MockClient((request) async {
+      if (request.url.host == 'securetoken.googleapis.com') {
+        refreshes++;
+        return http.Response(jsonEncode({
+          'user_id': 'alice',
+          'id_token': 'refreshed-id',
+          'refresh_token': 'rotated-refresh',
+          'expires_in': '3600',
+        }), 200);
+      }
+      return http.Response(jsonEncode({
+        'localId': 'alice',
+        'email': 'a@example.com',
+        'idToken': 'short-id',
+        'refreshToken': 'initial-refresh',
+        'expiresIn': '1',
+      }), 200);
+    });
+    final first = AppStore(prefs, firebaseKey: 'test', client: client);
+    await first.load(seed: seed);
+    expect(await first.signIn('a@example.com', 'password'), true);
+    final set = first.bundle.sets.first;
+    await first.record(set, set.items.first, true);
+    expect(first.completion(set), greaterThan(0));
+    first.dispose();
+
+    final reopened = AppStore(prefs, firebaseKey: 'test', client: client);
+    await reopened.load(seed: seed);
+    expect(reopened.uid, 'alice');
+    expect(reopened.email, 'a@example.com');
+    expect(reopened.completion(set), greaterThan(0));
+    expect(refreshes, 1);
+    expect(prefs.getKeys().every((key) => !key.contains('token')), true);
+    await reopened.signOut();
+    final guest = AppStore(prefs, firebaseKey: 'test', client: client);
+    await guest.load(seed: seed);
+    expect(guest.uid, isNull);
+    guest.dispose();
+    reopened.dispose();
+  });
   test('corrupt cached release falls back to bundled content', () async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('content:v1', 'broken');
@@ -160,7 +207,7 @@ void main() {
       await store.syncProgress();
       expect(uploads, 2);
       expect(store.status, contains('synced'));
-      store.signOut();
+      await store.signOut();
       expect(store.isWrong(set, set.items.first), true);
       expect(store.progress.containsKey(set.items[1].key(set.id)), false);
       store.dispose();
