@@ -5,10 +5,12 @@ import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'models.dart';
 import 'google_identity.dart';
+import 'plan_icon.dart';
 
 enum ItemStatus { missed, due, practised, new_ }
 
@@ -16,16 +18,20 @@ class AppStore extends ChangeNotifier {
   AppStore(
     this.prefs, {
     http.Client? client,
+    FlutterSecureStorage? sessionStorage,
     this.googleTokenProvider,
     this.apiUrl = const String.fromEnvironment('ACATRAIN_API_URL'),
     this.firebaseKey = const String.fromEnvironment('FIREBASE_WEB_API_KEY'),
     this.authContinueUrl = const String.fromEnvironment(
       'ACATRAIN_AUTH_CONTINUE_URL',
     ),
-  }) : client = client ?? http.Client();
+  }) : client = client ?? http.Client(),
+       sessionStorage = sessionStorage ?? const FlutterSecureStorage();
 
   final SharedPreferences prefs;
   final http.Client client;
+  final FlutterSecureStorage sessionStorage;
+  static const _sessionKey = 'acatrain.session.v1';
   final Future<String> Function()? googleTokenProvider;
   final String apiUrl, firebaseKey, authContinueUrl;
 
@@ -70,6 +76,7 @@ class AppStore extends ChangeNotifier {
 
   Future<void> setPlan(String value) async {
     await prefs.setString('demo-plan', value);
+    await PlanIcon.apply(value);
     notifyListeners();
   }
 
@@ -95,7 +102,10 @@ class AppStore extends ChangeNotifier {
     } else {
       await prefs.setString('demo-subscription', jsonEncode(value));
     }
-    if (plan != null) await prefs.setString('demo-plan', plan);
+    if (plan != null) {
+      await prefs.setString('demo-plan', plan);
+      await PlanIcon.apply(plan);
+    }
     notifyListeners();
   }
 
@@ -184,7 +194,7 @@ class AppStore extends ChangeNotifier {
     return FormatException(message);
   }
 
-  void _applySession(Map<String, dynamic> data, {String? fallbackEmail}) {
+  Future<void> _applySession(Map<String, dynamic> data, {String? fallbackEmail}) async {
     final nextUid = data['localId']?.toString();
     final nextIdToken = data['idToken']?.toString();
     final nextRefreshToken = data['refreshToken']?.toString();
@@ -201,6 +211,62 @@ class AppStore extends ChangeNotifier {
     final seconds = int.tryParse(data['expiresIn']?.toString() ?? '') ?? 3600;
     _expiresAt = DateTime.now().add(Duration(seconds: seconds));
     _loadProgress();
+    await _saveSession();
+  }
+
+  Future<void> _saveSession() async {
+    await sessionStorage.write(key: _sessionKey, value: jsonEncode({
+      'uid': uid, 'email': email, 'displayName': displayName,
+      'idToken': _idToken, 'refreshToken': _refreshToken,
+      'expiresAt': _expiresAt?.toUtc().toIso8601String(),
+    }));
+  }
+
+  Future<void> _restoreSession() async {
+    try {
+      final raw = await sessionStorage.read(key: _sessionKey);
+      if (raw == null) return;
+      final data = jsonDecode(raw) as Map<String, dynamic>;
+      final restoredUid = data['uid'] as String?;
+      final refresh = data['refreshToken'] as String?;
+      if (restoredUid == null || restoredUid.isEmpty || refresh == null || refresh.isEmpty) {
+        await sessionStorage.delete(key: _sessionKey);
+        return;
+      }
+      uid = restoredUid;
+      email = data['email'] as String?;
+      displayName = data['displayName'] as String?;
+      _idToken = data['idToken'] as String?;
+      _refreshToken = refresh;
+      _expiresAt = DateTime.tryParse(data['expiresAt']?.toString() ?? '');
+      _loadProgress();
+      if (firebaseKey.isNotEmpty && (_expiresAt == null ||
+          !DateTime.now().isBefore(_expiresAt!.subtract(const Duration(minutes: 1))))) {
+        try {
+          await _token();
+        } on FormatException {
+          await _clearSession();
+          status = 'Your session expired. Please sign in again.';
+        } catch (_) {
+          // Preserve offline progress and retry the refresh when online.
+          status = 'Account restored offline. Connect to sync progress.';
+        }
+      }
+    } catch (_) {
+      // A damaged or unavailable secure store must not prevent offline use.
+      status = 'Could not restore the saved account.';
+    }
+  }
+
+  Future<void> _clearSession() async {
+    uid = null;
+    email = null;
+    displayName = null;
+    _idToken = null;
+    _refreshToken = null;
+    _expiresAt = null;
+    _loadProgress();
+    await sessionStorage.delete(key: _sessionKey);
   }
 
   Future<void> load({String? seed}) async {
@@ -228,7 +294,8 @@ class AppStore extends ChangeNotifier {
         status = 'Downloaded cache was invalid; using bundled content.';
       }
     }
-    _loadProgress();
+    await _restoreSession();
+    if (uid == null) _loadProgress();
     notifyListeners();
   }
 
@@ -275,9 +342,18 @@ class AppStore extends ChangeNotifier {
       progress[item.key(set.id)]?.wrong ?? false;
 
   int practisedCount(StudySet set) =>
-      set.items
-          .where((item) => (progress[item.key(set.id)]?.box ?? 0) >= 3)
-          .length;
+      set.items.where((item) => progress.containsKey(item.key(set.id))).length;
+
+  /// Credit the first successful review immediately and grow toward mastery.
+  double completion(StudySet set) {
+    if (set.items.isEmpty) return 0;
+    final credit = set.items.fold<double>(0, (total, item) {
+      final state = progress[item.key(set.id)];
+      if (state == null) return total;
+      return total + (state.box == 0 ? 0.15 : (state.box / 3).clamp(0.0, 1.0));
+    });
+    return credit / set.items.length;
+  }
 
   int get totalItems => bundle.sets.fold(0, (n, set) => n + set.items.length);
 
@@ -286,7 +362,7 @@ class AppStore extends ChangeNotifier {
     final state = progress[item.key(set.id)];
     final due = state == null || !state.dueAt.isAfter(DateTime.now());
     if (due) return ItemStatus.due;
-    return state.box >= 3 ? ItemStatus.practised : ItemStatus.new_;
+    return ItemStatus.practised;
   }
 
   Future<void> record(StudySet set, StudyItem item, bool correct) async {
@@ -420,7 +496,7 @@ class AppStore extends ChangeNotifier {
       _pendingGoogleToken = null;
       _pendingGoogleEmail = null;
     }
-    _applySession(data, fallbackEmail: address.trim());
+    await _applySession(data, fallbackEmail: address.trim());
     if (!register) {
       try {
         await prepareGoogleIdentityPassword(address.trim(), password);
@@ -495,7 +571,7 @@ class AppStore extends ChangeNotifier {
           'Google could not be linked to the current account.',
         );
       }
-      _applySession(data, fallbackEmail: email);
+      await _applySession(data, fallbackEmail: email);
       status =
           'Google is connected to your account. Your progress stays with this account.';
       return;
@@ -509,7 +585,7 @@ class AppStore extends ChangeNotifier {
           'This email already has an account. Sign in with its password to connect Google.',
         );
       }
-      _applySession(data);
+      await _applySession(data);
       status =
           'Signed in with Google. Use Sync progress to merge progress across devices.';
     } on FormatException catch (error) {
@@ -603,32 +679,26 @@ class AppStore extends ChangeNotifier {
       );
     }
     final data = jsonDecode(response.body) as Map<String, dynamic>;
-    _applySession(data, fallbackEmail: address.trim());
+    await _applySession(data, fallbackEmail: address.trim());
     status =
         'Signed in with an email link. Use Sync progress to merge progress across devices.';
   });
 
-  void signOut() {
+  Future<void> signOut() async {
     if (busy) return;
     signOutGoogleIdentity().ignore();
-    uid = null;
-    email = null;
-    displayName = null;
     _pendingGoogleToken = null;
     _pendingGoogleEmail = null;
-    _idToken = null;
-    _refreshToken = null;
-    _expiresAt = null;
-    _loadProgress();
+    await _clearSession();
     status = 'Signed out. Guest progress restored.';
     notifyListeners();
   }
 
   Future<String> _token() async {
-    if (_idToken == null) {
+    if (_refreshToken == null) {
       throw const FormatException('Sign in before syncing progress.');
     }
-    if (_expiresAt != null &&
+    if (_idToken != null && _expiresAt != null &&
         DateTime.now().isBefore(
           _expiresAt!.subtract(const Duration(minutes: 1)),
         )) {
@@ -646,9 +716,12 @@ class AppStore extends ChangeNotifier {
         )
         .timeout(const Duration(seconds: 20));
     if (response.statusCode != 200) {
-      throw const FormatException(
-        'Your session expired. Sign out and sign in again.',
-      );
+      if (response.statusCode == 400 || response.statusCode == 401) {
+        await _clearSession();
+        notifyListeners();
+        throw const FormatException('Your session expired. Please sign in again.');
+      }
+      throw Exception('Could not refresh the session. Check your connection.');
     }
     final data = jsonDecode(response.body) as Map<String, dynamic>;
     if (data['user_id'] != uid) {
@@ -659,6 +732,7 @@ class AppStore extends ChangeNotifier {
     _expiresAt = DateTime.now().add(
       Duration(seconds: int.parse(data['expires_in'])),
     );
+    await _saveSession();
     return _idToken!;
   }
 

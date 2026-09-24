@@ -44,7 +44,7 @@ Priority: optional
 Architecture: amd64
 Maintainer: darrenintr <168272439+darrenintr@users.noreply.github.com>
 Installed-Size: $INSTALLED_SIZE
-Depends: libgtk-3-0 | libgtk-3-0t64, libstdc++6, libgcc-s1
+Depends: libgtk-3-0 | libgtk-3-0t64, libstdc++6, libgcc-s1, libsecret-1-0, libjsoncpp25
 Homepage: https://github.com/darrenintr/acatrain
 Description: Offline-first study sets with safe content updates
  Acatrain is a responsive Flutter study application with local review progress
