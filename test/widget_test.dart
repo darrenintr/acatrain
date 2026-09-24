@@ -3,6 +3,8 @@ import 'dart:io';
 import 'package:acatrain/main.dart';
 import 'package:acatrain/store.dart';
 import 'package:acatrain/study_page.dart';
+import 'package:acatrain/game_page.dart';
+import 'package:acatrain/models.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -120,6 +122,27 @@ void main() {
     state.dispose();
   });
 
+  testWidgets('set page opens the matching game', (tester) async {
+    final state = await store();
+    final set = state.bundle.sets.first;
+    await tester.binding.setSurfaceSize(const Size(360, 740));
+    await tester.pumpWidget(MaterialApp(home: SetPage(set: set, store: state)));
+    await tester.scrollUntilVisible(
+      find.text('Match pairs'),
+      250,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.ensureVisible(find.text('Match pairs'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Match pairs'));
+    await tester.pumpAndSettle();
+    expect(find.text('Connect each question to its answer.'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.binding.setSurfaceSize(null);
+    await tester.pumpWidget(const SizedBox());
+    state.dispose();
+  });
+
   testWidgets('flashcard reveal and rating save progress', (tester) async {
     final state = await store();
     final set = state.bundle.sets.first;
@@ -175,6 +198,166 @@ void main() {
     expect(state.isWrong(set, item), true);
     expect(find.text('0/1', findRichText: true), findsOneWidget);
     expect(find.text('correct'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+    state.dispose();
+  });
+
+  testWidgets('matching pairs completes and records both items', (
+    tester,
+  ) async {
+    final state = await store();
+    const first = StudyItem(
+      id: 'match-a',
+      revision: 1,
+      type: 'flashcard',
+      prompt: 'Term alpha',
+      answer: 'Meaning alpha',
+    );
+    const second = StudyItem(
+      id: 'match-b',
+      revision: 1,
+      type: 'flashcard',
+      prompt: 'Term beta',
+      answer: 'Meaning beta',
+    );
+    const set = StudySet(
+      id: 'match-test',
+      title: 'Matching test',
+      subject: 'Test',
+      description: '',
+      items: [first, second],
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: GamePage(set: set, store: state, game: StudyGame.match),
+      ),
+    );
+    await tester.tap(find.text('Term alpha'));
+    await tester.tap(find.text('Meaning alpha'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Term beta'));
+    await tester.tap(find.text('Meaning beta'));
+    await tester.pumpAndSettle();
+    expect(find.text('Game complete'), findsOneWidget);
+    expect(state.progress[first.key(set.id)]?.box, 1);
+    expect(state.progress[second.key(set.id)]?.box, 1);
+    await tester.pumpWidget(const SizedBox());
+    state.dispose();
+  });
+
+  testWidgets('matching moves through multiple short rounds', (tester) async {
+    final state = await store();
+    final items = List.generate(
+      5,
+      (index) => StudyItem(
+        id: 'round-$index',
+        revision: 1,
+        type: 'flashcard',
+        prompt: 'Term $index',
+        answer: 'Meaning $index',
+      ),
+    );
+    final set = StudySet(
+      id: 'round-test',
+      title: 'Rounds',
+      subject: 'Test',
+      description: '',
+      items: items,
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: GamePage(set: set, store: state, game: StudyGame.match),
+      ),
+    );
+    final remaining = items.toList();
+    for (var step = 0; step < items.length; step++) {
+      final item = remaining.firstWhere(
+        (candidate) => find.text(candidate.prompt).evaluate().isNotEmpty,
+      );
+      remaining.remove(item);
+      await tester.ensureVisible(find.text(item.prompt));
+      await tester.tap(find.text(item.prompt));
+      await tester.ensureVisible(find.text(item.answerText));
+      await tester.tap(find.text(item.answerText));
+      await tester.pumpAndSettle();
+    }
+    expect(find.text('Game complete'), findsOneWidget);
+    for (final item in items) {
+      expect(state.progress[item.key(set.id)]?.box, 1);
+    }
+    await tester.pumpWidget(const SizedBox());
+    state.dispose();
+  });
+
+  testWidgets('quick answers includes flashcards with set-based choices', (
+    tester,
+  ) async {
+    final state = await store();
+    const first = StudyItem(
+      id: 'quick-card-a',
+      revision: 1,
+      type: 'flashcard',
+      prompt: 'Term one',
+      answer: 'Meaning one',
+    );
+    const second = StudyItem(
+      id: 'quick-card-b',
+      revision: 1,
+      type: 'flashcard',
+      prompt: 'Term two',
+      answer: 'Meaning two',
+    );
+    const set = StudySet(
+      id: 'quick-cards',
+      title: 'Card choices',
+      subject: 'Test',
+      description: '',
+      items: [first, second],
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: GamePage(set: set, store: state, game: StudyGame.quickAnswer),
+      ),
+    );
+    expect(find.text('Meaning one'), findsOneWidget);
+    expect(find.text('Meaning two'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+    state.dispose();
+  });
+
+  testWidgets('quick answers shows feedback and saves a missed answer', (
+    tester,
+  ) async {
+    final state = await store();
+    const item = StudyItem(
+      id: 'quick-a',
+      revision: 1,
+      type: 'mcq',
+      prompt: 'Which choice is right?',
+      choices: ['Wrong choice', 'Right choice'],
+      correctIndex: 1,
+      explanation: 'The second choice is right.',
+    );
+    const set = StudySet(
+      id: 'quick-test',
+      title: 'Quick test',
+      subject: 'Test',
+      description: '',
+      items: [item],
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: GamePage(set: set, store: state, game: StudyGame.quickAnswer),
+      ),
+    );
+    await tester.tap(find.text('Wrong choice'));
+    await tester.pumpAndSettle();
+    expect(find.text('The second choice is right.'), findsOneWidget);
+    await tester.tap(find.text('Continue'));
+    await tester.pumpAndSettle();
+    expect(find.text('Game complete'), findsOneWidget);
+    expect(state.isWrong(set, item), true);
     await tester.pumpWidget(const SizedBox());
     state.dispose();
   });

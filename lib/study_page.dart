@@ -5,6 +5,7 @@ import 'app_ui.dart';
 import 'expressive.dart';
 import 'models.dart';
 import 'store.dart';
+import 'game_page.dart';
 
 /// Renders `^2`/`^3` as superscripts and a lone `-` as a proper minus sign,
 /// for display only. Content itself is never rewritten.
@@ -30,10 +31,26 @@ class SetPage extends StatelessWidget {
     );
   }
 
+  void _startGame(BuildContext context, StudyGame game) {
+    Navigator.push(
+      context,
+      AcatrainPageRoute<void>(
+        builder: (_) => GamePage(set: set, store: store, game: game),
+      ),
+    );
+  }
+
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => AnimatedBuilder(
+    animation: store,
+    builder: (context, _) => _buildContent(context),
+  );
+
+  Widget _buildContent(BuildContext context) {
     final theme = Theme.of(context);
     final quizzes = set.items.where((i) => i.isQuiz).toList();
+    final matchable = matchableItems(set.items);
+    final quickItems = quickAnswerItems(set.items);
     final due = store.dueItems(set);
     final practised = store.practisedCount(set);
     final style = SubjectStyle.of(context, set.subject);
@@ -161,6 +178,53 @@ class SetPage extends StatelessWidget {
                             due.isEmpty
                                 ? null
                                 : () => _start(context, due, false),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 24),
+              Text(
+                tr(context, 'Mini games'),
+                style: theme.textTheme.titleLarge,
+              ),
+              const SizedBox(height: 8),
+              IntrinsicHeight(
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Expanded(
+                      child: _ModeTile(
+                        icon: Icons.join_inner_rounded,
+                        title: tr(context, 'Match pairs'),
+                        detail:
+                            isCantonese(context)
+                                ? '${matchable.length} 組問答配對'
+                                : '${matchable.length} pairs to connect',
+                        background: theme.colorScheme.secondaryContainer,
+                        foreground: theme.colorScheme.onSecondaryContainer,
+                        onTap:
+                            matchable.length < 2
+                                ? null
+                                : () => _startGame(context, StudyGame.match),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: _ModeTile(
+                        icon: Icons.bolt_rounded,
+                        title: tr(context, 'Quick answers'),
+                        detail:
+                            isCantonese(context)
+                                ? '${quickItems.length} 題快速挑戰'
+                                : '${quickItems.length} fast questions',
+                        background: theme.colorScheme.tertiaryContainer,
+                        foreground: theme.colorScheme.onTertiaryContainer,
+                        onTap:
+                            quickItems.isEmpty
+                                ? null
+                                : () =>
+                                    _startGame(context, StudyGame.quickAnswer),
                       ),
                     ),
                   ],
