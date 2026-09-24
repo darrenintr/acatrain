@@ -75,6 +75,9 @@ if (requested.includes('macos')) {
     const file = `macos/Runner/${name}.entitlements`;
     if (fs.existsSync(file)) {
       let xml = fs.readFileSync(file, 'utf8');
+      if (!xml.includes('keychain-access-groups')) {
+        xml = xml.replace('</dict>', '    <key>keychain-access-groups</key>\n    <array/>\n</dict>');
+      }
       if (!xml.includes('com.apple.security.network.client')) {
         xml = xml.replace(
           '</dict>',
