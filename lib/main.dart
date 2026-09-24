@@ -16,6 +16,7 @@ import 'subscription.dart';
 import 'google_identity.dart';
 import 'language.dart';
 import 'launch_screen.dart';
+import 'plan_icon.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -39,6 +40,7 @@ Future<void> _boot(AppStore store) async {
   await store.load();
   // Bill renewals or end cancelled plans that fell due while closed.
   await settleDemoSubscription(store);
+  await PlanIcon.apply(store.plan);
   if (store.cloudConfigured) unawaited(store.syncContent());
 }
 
@@ -1912,8 +1914,7 @@ class _TodaySetRow extends StatelessWidget {
     final theme = Theme.of(context);
     final style = SubjectStyle.of(context, set.subject);
     final due = store.dueCount(set);
-    final progress =
-        set.items.isEmpty ? 0.0 : store.practisedCount(set) / set.items.length;
+    final progress = store.completion(set);
     return AcatrainPressScale(
       child: StudySetHero(
         setId: set.id,
@@ -2033,10 +2034,7 @@ class _DesktopSetGrid extends StatelessWidget {
       final theme = Theme.of(context);
       final style = SubjectStyle.of(context, set.subject);
       final due = store.dueCount(set);
-      final progress =
-          set.items.isEmpty
-              ? 0.0
-              : store.practisedCount(set) / set.items.length;
+      final progress = store.completion(set);
       return AcatrainPressScale(
         child: StudySetHero(
           setId: set.id,
