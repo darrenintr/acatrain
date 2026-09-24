@@ -428,82 +428,88 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
       final reduceMotion = MediaQuery.of(context).disableAnimations;
       return Scaffold(
         appBar: expanded ? null : _appBar(theme),
-        body: Column(
-          children: [
-            AnimatedSwitcher(
-              duration: acatrainFastMotion,
-              child:
-                  store.busy
-                      ? const LinearProgressIndicator(
-                        key: ValueKey('busy'),
-                        minHeight: 2,
-                      )
-                      : const SizedBox(key: ValueKey('idle'), height: 2),
-            ),
-            Expanded(
-              child: Row(
-                children: [
-                  if (useRail)
-                    _ExpressiveRail(
-                      selectedIndex: _page,
-                      onSelected: _selectPage,
-                      labels:
-                          _labels.map((label) => tr(context, label)).toList(),
-                      icons: _icons,
-                      selectedIcons: _selectedIcons,
-                    ),
-                  Expanded(
-                    child: Align(
-                      alignment: Alignment.topCenter,
-                      child: ConstrainedBox(
-                        constraints: BoxConstraints(
-                          maxWidth: AcatrainLayout.maxContentWidth(context),
-                        ),
-                        child: AnimatedSwitcher(
-                          duration:
-                              reduceMotion
-                                  ? Duration.zero
-                                  : acatrainMediumMotion,
-                          switchInCurve: Curves.easeOutCubic,
-                          switchOutCurve: Curves.easeInCubic,
-                          transitionBuilder: (child, animation) {
-                            final slide = Tween<Offset>(
-                              begin: const Offset(0.025, 0),
-                              end: Offset.zero,
-                            ).animate(
-                              CurvedAnimation(
-                                parent: animation,
-                                curve: Curves.easeOutBack,
-                              ),
-                            );
-                            return FadeTransition(
-                              opacity: animation,
-                              child: SlideTransition(
-                                position: slide,
-                                child: child,
-                              ),
-                            );
-                          },
-                          child: KeyedSubtree(
-                            key: ValueKey(_page),
-                            child: switch (_page) {
-                              0 =>
-                                expanded
-                                    ? _todayExpanded(theme)
-                                    : _today(theme),
-                              1 => _library(theme, expanded: expanded),
-                              2 => _review(theme, expanded: expanded),
-                              _ => _settings(theme, expanded: expanded),
+        body: SafeArea(
+          // Expanded layouts draw their own header instead of using an
+          // AppBar, so Scaffold does not reserve the system status bar.
+          top: expanded,
+          bottom: false,
+          child: Column(
+            children: [
+              AnimatedSwitcher(
+                duration: acatrainFastMotion,
+                child:
+                    store.busy
+                        ? const LinearProgressIndicator(
+                          key: ValueKey('busy'),
+                          minHeight: 2,
+                        )
+                        : const SizedBox(key: ValueKey('idle'), height: 2),
+              ),
+              Expanded(
+                child: Row(
+                  children: [
+                    if (useRail)
+                      _ExpressiveRail(
+                        selectedIndex: _page,
+                        onSelected: _selectPage,
+                        labels:
+                            _labels.map((label) => tr(context, label)).toList(),
+                        icons: _icons,
+                        selectedIcons: _selectedIcons,
+                      ),
+                    Expanded(
+                      child: Align(
+                        alignment: Alignment.topCenter,
+                        child: ConstrainedBox(
+                          constraints: BoxConstraints(
+                            maxWidth: AcatrainLayout.maxContentWidth(context),
+                          ),
+                          child: AnimatedSwitcher(
+                            duration:
+                                reduceMotion
+                                    ? Duration.zero
+                                    : acatrainMediumMotion,
+                            switchInCurve: Curves.easeOutCubic,
+                            switchOutCurve: Curves.easeInCubic,
+                            transitionBuilder: (child, animation) {
+                              final slide = Tween<Offset>(
+                                begin: const Offset(0.025, 0),
+                                end: Offset.zero,
+                              ).animate(
+                                CurvedAnimation(
+                                  parent: animation,
+                                  curve: Curves.easeOutBack,
+                                ),
+                              );
+                              return FadeTransition(
+                                opacity: animation,
+                                child: SlideTransition(
+                                  position: slide,
+                                  child: child,
+                                ),
+                              );
                             },
+                            child: KeyedSubtree(
+                              key: ValueKey(_page),
+                              child: switch (_page) {
+                                0 =>
+                                  expanded
+                                      ? _todayExpanded(theme)
+                                      : _today(theme),
+                                1 => _library(theme, expanded: expanded),
+                                2 => _review(theme, expanded: expanded),
+                                _ => _settings(theme, expanded: expanded),
+                              },
+                            ),
                           ),
                         ),
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
         bottomNavigationBar:
             useRail

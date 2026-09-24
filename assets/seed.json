@@ -207,6 +207,113 @@
           "explanation": "This is a possible future condition: present simple in the if-clause, will in the main clause."
         }
       ]
+    },
+    {
+      "id": "english-conversational-vocab",
+      "title": "Natural spoken English",
+      "subject": "English",
+      "description": "Revise natural conversational expressions from the Obsidian note “Vocab list（口語）”.",
+      "items": [
+        {
+          "id": "shoot-my-shot",
+          "revision": 1,
+          "type": "flashcard",
+          "prompt": "How can you naturally say “I decided to give it a try”?",
+          "answer": "I’d shoot my shot. Use it when taking a chance, especially when success is uncertain."
+        },
+        {
+          "id": "blown-away",
+          "revision": 1,
+          "type": "flashcard",
+          "prompt": "How can you say “I was really surprised” more vividly?",
+          "answer": "I was blown away. It expresses strong surprise or admiration."
+        },
+        {
+          "id": "self-conscious",
+          "revision": 1,
+          "type": "flashcard",
+          "prompt": "How can you say “I started feeling nervous about how others saw me”?",
+          "answer": "I started getting really self-conscious."
+        },
+        {
+          "id": "pinching-myself",
+          "revision": 1,
+          "type": "flashcard",
+          "prompt": "What expression means “I could hardly believe it was real”?",
+          "answer": "I remember really pinching myself. It describes a moment that felt almost unreal."
+        },
+        {
+          "id": "on-the-spot",
+          "revision": 1,
+          "type": "flashcard",
+          "prompt": "How can you say “I said yes immediately”?",
+          "answer": "I said yes on the spot. “On the spot” means right then and there."
+        }
+      ]
+    },
+    {
+      "id": "english-paper-3b-phrases",
+      "title": "Paper 3B: useful phrases",
+      "subject": "English",
+      "description": "Practise expressions for promotional articles and proposals from the Obsidian note “Fancy phrases(paper 3b)”.",
+      "items": [
+        {
+          "id": "promo-opening",
+          "revision": 1,
+          "type": "flashcard",
+          "prompt": "Write a question opening for a promotional article that highlights two benefits.",
+          "answer": "Fancy a chance to [benefit] while [another benefit]?"
+        },
+        {
+          "id": "promo-event",
+          "revision": 1,
+          "type": "flashcard",
+          "prompt": "Introduce an event and explain the purpose of its activities.",
+          "answer": "This year, [organisation] is bringing back [event], with an exciting range of activities designed to [purpose]."
+        },
+        {
+          "id": "promo-more-than",
+          "revision": 1,
+          "type": "flashcard",
+          "prompt": "Show that an event offers more than one opportunity.",
+          "answer": "This is more than just a chance to [first benefit]; it is also an opportunity to [second benefit]."
+        },
+        {
+          "id": "promo-close",
+          "revision": 1,
+          "type": "flashcard",
+          "prompt": "Close a promotional article with an invitation to attend.",
+          "answer": "With so much on offer, [event] is certainly not to be missed. So, what are you waiting for? Join us and experience it for yourself!"
+        },
+        {
+          "id": "proposal-aim",
+          "revision": 1,
+          "type": "flashcard",
+          "prompt": "State the purpose and scope of a proposal.",
+          "answer": "This proposal aims to outline the proposed arrangement, explain its key benefits and provide reasons for its implementation."
+        },
+        {
+          "id": "proposal-view",
+          "revision": 1,
+          "type": "flashcard",
+          "prompt": "Recommend an action in view of a problem or finding.",
+          "answer": "In view of [problem/finding], [action] would be a suitable way to [purpose]."
+        },
+        {
+          "id": "proposal-rationale",
+          "revision": 1,
+          "type": "flashcard",
+          "prompt": "Introduce two reasons supporting a proposal.",
+          "answer": "The rationale behind this proposal is twofold."
+        },
+        {
+          "id": "proposal-constraint",
+          "revision": 1,
+          "type": "flashcard",
+          "prompt": "Justify the most practical option given a constraint.",
+          "answer": "Considering [constraint], [option] appears to be the most practical choice."
+        }
+      ]
     }
   ]
 }

@@ -38,6 +38,16 @@ class AppStore extends ChangeNotifier {
   DateTime? _expiresAt;
   DateTime? lastContentSync;
   Map<String, ReviewState> progress = {};
+  List<StudySet> _bundledEnglishSets = const [];
+
+  ContentBundle _withBundledEnglish(ContentBundle content) {
+    final ids = content.sets.map((set) => set.id).toSet();
+    return ContentBundle(List.unmodifiable([
+      ...content.sets,
+      for (final set in _bundledEnglishSets)
+        if (!ids.contains(set.id)) set,
+    ]));
+  }
 
   bool get cloudConfigured => apiUrl.isNotEmpty;
   String? get pendingGoogleEmail => _pendingGoogleEmail;
@@ -194,9 +204,13 @@ class AppStore extends ChangeNotifier {
   }
 
   Future<void> load({String? seed}) async {
-    bundle = ContentBundle.parse(
+    final bundled = ContentBundle.parse(
       seed ?? await rootBundle.loadString('assets/seed.json'),
     );
+    _bundledEnglishSets = bundled.sets.where((set) =>
+        set.id == 'english-conversational-vocab' ||
+        set.id == 'english-paper-3b-phrases').toList(growable: false);
+    bundle = bundled;
     final cached = prefs.getString('content:v1');
     if (cached != null) {
       try {
@@ -207,7 +221,7 @@ class AppStore extends ChangeNotifier {
         }
         final restored = ContentBundle.parse(payload);
         final restoredId = data['releaseId'] as String;
-        bundle = restored;
+        bundle = _withBundledEnglish(restored);
         releaseId = restoredId;
         status = 'Using downloaded content. Available offline.';
       } catch (_) {
@@ -366,7 +380,7 @@ class AppStore extends ChangeNotifier {
       if (!saved) {
         throw const FormatException('Could not save content for offline use.');
       }
-      bundle = next;
+      bundle = _withBundledEnglish(next);
       releaseId = nextId;
       lastContentSync = DateTime.now();
       status = 'New content is ready. Existing study sessions stay unchanged.';

@@ -21,7 +21,7 @@ function server({ status = 200, hash = manifest.sha256, cors = origin } = {}) {
 }
 test('deployment verification reads the release and checks its checksum and CORS', async () => {
   assert.deepEqual(await verifyDeployment({ base, origin, fetcher: server() }),
-    { ok: true, empty: false, releaseId: 'r1', sets: 3 });
+    { ok: true, empty: false, releaseId: 'r1', sets: 5 });
   await assert.rejects(verifyDeployment({ base, origin, fetcher: server({ hash: 'wrong' }) }), /checksum/);
   await assert.rejects(verifyDeployment({ base, origin, fetcher: server({ cors: '*' }) }), /CORS/);
 });
