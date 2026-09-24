@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/physics.dart';
+
+import 'expressive.dart';
 
 enum AcatrainWindowClass { compact, medium, expanded }
 
@@ -39,8 +42,9 @@ const acatrainHeroMotion = Duration(milliseconds: 420);
 /// named constant for.
 FontWeight acatrainWeight(double weight) {
   const steps = [100, 200, 300, 400, 500, 600, 700, 800, 900];
-  final nearest =
-      steps.reduce((a, b) => (weight - a).abs() < (weight - b).abs() ? a : b);
+  final nearest = steps.reduce(
+    (a, b) => (weight - a).abs() < (weight - b).abs() ? a : b,
+  );
   return FontWeight.values[(nearest ~/ 100) - 1];
 }
 
@@ -87,32 +91,57 @@ BorderRadius segmentRadius(
   return BorderRadius.circular(inner);
 }
 
-/// Adds a subtle response while retaining the child's InkWell semantics.
+/// Adds a subtle press response while retaining the child's InkWell
+/// semantics. The scale rides the expressive fast spatial spring, so it
+/// settles with a small bounce on release; reduce-motion skips it.
 class AcatrainPressScale extends StatefulWidget {
-  const AcatrainPressScale({super.key, required this.child});
+  const AcatrainPressScale({
+    super.key,
+    required this.child,
+    this.pressedScale = 0.985,
+  });
   final Widget child;
+  final double pressedScale;
 
   @override
   State<AcatrainPressScale> createState() => _AcatrainPressScaleState();
 }
 
-class _AcatrainPressScaleState extends State<AcatrainPressScale> {
-  bool _pressed = false;
+class _AcatrainPressScaleState extends State<AcatrainPressScale>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _scale = AnimationController.unbounded(
+    vsync: this,
+    value: 1,
+  );
+
+  void _springTo(double target) {
+    if (MediaQuery.of(context).disableAnimations) {
+      _scale.value = 1;
+      return;
+    }
+    _scale.animateWith(
+      SpringSimulation(
+        AcatrainSprings.spatialFast,
+        _scale.value,
+        target,
+        _scale.velocity,
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _scale.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    final reduceMotion = MediaQuery.of(context).disableAnimations;
     return Listener(
-      onPointerDown: (_) => setState(() => _pressed = true),
-      onPointerUp: (_) => setState(() => _pressed = false),
-      onPointerCancel: (_) => setState(() => _pressed = false),
-      child: AnimatedScale(
-        scale: reduceMotion || !_pressed ? 1 : 0.985,
-        duration: reduceMotion ? Duration.zero :
-          _pressed ? const Duration(milliseconds: 90) : const Duration(milliseconds: 300),
-        curve: _pressed ? Curves.easeOut : Curves.easeOutBack,
-        child: widget.child,
-      ),
+      onPointerDown: (_) => _springTo(widget.pressedScale),
+      onPointerUp: (_) => _springTo(1),
+      onPointerCancel: (_) => _springTo(1),
+      child: ScaleTransition(scale: _scale, child: widget.child),
     );
   }
 }
@@ -120,11 +149,7 @@ class _AcatrainPressScaleState extends State<AcatrainPressScale> {
 String studySetHeroTag(String setId) => 'study-set:$setId';
 
 class StudySetHero extends StatelessWidget {
-  const StudySetHero({
-    super.key,
-    required this.setId,
-    required this.child,
-  });
+  const StudySetHero({super.key, required this.setId, required this.child});
 
   final String setId;
   final Widget child;
@@ -134,37 +159,34 @@ class StudySetHero extends StatelessWidget {
     return Hero(
       tag: studySetHeroTag(setId),
       transitionOnUserGestures: true,
-      createRectTween: (begin, end) =>
-          MaterialRectArcTween(begin: begin, end: end),
+      createRectTween:
+          (begin, end) => MaterialRectArcTween(begin: begin, end: end),
       child: child,
     );
   }
 }
 
 class AcatrainPageRoute<T> extends PageRouteBuilder<T> {
-  AcatrainPageRoute({
-    required WidgetBuilder builder,
-    super.settings,
-  }) : super(
-          transitionDuration: acatrainMediumMotion,
-          reverseTransitionDuration: const Duration(milliseconds: 280),
-          pageBuilder: (context, animation, secondaryAnimation) =>
-              builder(context),
-          transitionsBuilder:
-              (context, animation, secondaryAnimation, child) {
-            final curved = CurvedAnimation(
-              parent: animation,
-              curve: Curves.easeOutCubic,
-              reverseCurve: Curves.easeInCubic,
-            );
-            final offset = Tween<Offset>(
-              begin: const Offset(0, 0.025),
-              end: Offset.zero,
-            ).animate(curved);
-            return FadeTransition(
-              opacity: curved,
-              child: SlideTransition(position: offset, child: child),
-            );
-          },
-        );
+  AcatrainPageRoute({required WidgetBuilder builder, super.settings})
+    : super(
+        transitionDuration: acatrainMediumMotion,
+        reverseTransitionDuration: const Duration(milliseconds: 280),
+        pageBuilder:
+            (context, animation, secondaryAnimation) => builder(context),
+        transitionsBuilder: (context, animation, secondaryAnimation, child) {
+          final curved = CurvedAnimation(
+            parent: animation,
+            curve: Curves.easeOutCubic,
+            reverseCurve: Curves.easeInCubic,
+          );
+          final offset = Tween<Offset>(
+            begin: const Offset(0, 0.025),
+            end: Offset.zero,
+          ).animate(curved);
+          return FadeTransition(
+            opacity: curved,
+            child: SlideTransition(position: offset, child: child),
+          );
+        },
+      );
 }
