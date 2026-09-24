@@ -6,11 +6,13 @@ import 'package:acatrain/study_page.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   Future<AppStore> store() async {
     SharedPreferences.setMockInitialValues({});
+    FlutterSecureStorage.setMockInitialValues({});
     final state = AppStore(await SharedPreferences.getInstance());
     await state.load(seed: File('assets/seed.json').readAsStringSync());
     return state;
@@ -40,6 +42,7 @@ void main() {
     tester,
   ) async {
     SharedPreferences.setMockInitialValues({});
+    FlutterSecureStorage.setMockInitialValues({});
     final state = AppStore(await SharedPreferences.getInstance());
     final loading = Completer<void>();
     await tester.pumpWidget(AcatrainApp(store: state, ready: loading.future));
