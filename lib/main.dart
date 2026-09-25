@@ -340,6 +340,13 @@ const _months = [
 String _formatEyebrowDate(DateTime date) =>
     '${_weekdays[date.weekday - 1]}, ${date.day} ${_months[date.month - 1]}';
 
+/// Page-switch fade: the effects spring, stretched over the spatial
+/// spring's settle time that drives the accompanying slide.
+final _pageFadeCurve = AcatrainSpringCurve(
+  AcatrainSprings.effectsDefault,
+  span: AcatrainSprings.settle(AcatrainSprings.spatialDefault),
+);
+
 class HomeShell extends StatefulWidget {
   const HomeShell({super.key, required this.store});
   final AppStore store;
@@ -427,7 +434,6 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
       final useRail = windowClass != AcatrainWindowClass.compact;
       final expanded = windowClass == AcatrainWindowClass.expanded;
       final theme = Theme.of(context);
-      final reduceMotion = MediaQuery.of(context).disableAnimations;
       return Scaffold(
         appBar: expanded ? null : _appBar(theme),
         body: SafeArea(
@@ -438,7 +444,12 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
           child: Column(
             children: [
               AnimatedSwitcher(
-                duration: acatrainFastMotion,
+                duration: AcatrainSprings.durationOf(
+                  context,
+                  AcatrainSprings.effectsDefault,
+                ),
+                switchInCurve: AcatrainSprings.effectsDefaultCurve,
+                switchOutCurve: AcatrainSprings.effectsDefaultCurve,
                 child:
                     store.busy
                         ? const LinearProgressIndicator(
@@ -467,12 +478,10 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
                             maxWidth: AcatrainLayout.maxContentWidth(context),
                           ),
                           child: AnimatedSwitcher(
-                            duration:
-                                reduceMotion
-                                    ? Duration.zero
-                                    : acatrainMediumMotion,
-                            switchInCurve: Curves.easeOutCubic,
-                            switchOutCurve: Curves.easeInCubic,
+                            duration: AcatrainSprings.durationOf(
+                              context,
+                              AcatrainSprings.spatialDefault,
+                            ),
                             transitionBuilder: (child, animation) {
                               final slide = Tween<Offset>(
                                 begin: const Offset(0.025, 0),
@@ -480,11 +489,14 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
                               ).animate(
                                 CurvedAnimation(
                                   parent: animation,
-                                  curve: Curves.easeOutBack,
+                                  curve: AcatrainSprings.spatialDefaultCurve,
                                 ),
                               );
                               return FadeTransition(
-                                opacity: animation,
+                                opacity: CurvedAnimation(
+                                  parent: animation,
+                                  curve: _pageFadeCurve,
+                                ),
                                 child: SlideTransition(
                                   position: slide,
                                   child: child,
@@ -1479,7 +1491,11 @@ class _RailDestination extends StatelessWidget {
             child: Column(
               children: [
                 AnimatedContainer(
-                  duration: acatrainFastMotion,
+                  duration: AcatrainSprings.durationOf(
+                    context,
+                    AcatrainSprings.effectsDefault,
+                  ),
+                  curve: AcatrainSprings.effectsDefaultCurve,
                   width: 56,
                   height: 32,
                   decoration: BoxDecoration(
@@ -2411,7 +2427,19 @@ class _FilterChip extends StatelessWidget {
   final VoidCallback onSelected;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => AcatrainPressScale(
+    pressedScale: 0.95,
+    child: AnimatedSize(
+      duration: AcatrainSprings.durationOf(
+        context,
+        AcatrainSprings.spatialFast,
+      ),
+      curve: AcatrainSprings.spatialFastCurve,
+      child: _chip(context),
+    ),
+  );
+
+  Widget _chip(BuildContext context) {
     final theme = Theme.of(context);
     if (selected) {
       return Material(
@@ -2894,7 +2922,12 @@ class _AuthSheetState extends State<_AuthSheet> {
           ),
           const SizedBox(height: 12),
           AnimatedSwitcher(
-            duration: acatrainFastMotion,
+            duration: AcatrainSprings.durationOf(
+              context,
+              AcatrainSprings.effectsDefault,
+            ),
+            switchInCurve: AcatrainSprings.effectsDefaultCurve,
+            switchOutCurve: AcatrainSprings.effectsDefaultCurve,
             child:
                 _passwordless
                     ? Column(

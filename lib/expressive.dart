@@ -8,14 +8,82 @@ import 'package:flutter/physics.dart';
 /// *ratio*; [SpringDescription.withDampingRatio] converts it to the
 /// absolute damping coefficient these physics simulations expect.
 abstract final class AcatrainSprings {
-  static final spatialFast =
-      SpringDescription.withDampingRatio(mass: 1, stiffness: 800, ratio: 0.6);
-  static final spatialDefault =
-      SpringDescription.withDampingRatio(mass: 1, stiffness: 380, ratio: 0.8);
-  static final spatialSlow =
-      SpringDescription.withDampingRatio(mass: 1, stiffness: 200, ratio: 0.8);
+  static final spatialFast = SpringDescription.withDampingRatio(
+    mass: 1,
+    stiffness: 800,
+    ratio: 0.6,
+  );
+  static final spatialDefault = SpringDescription.withDampingRatio(
+    mass: 1,
+    stiffness: 380,
+    ratio: 0.8,
+  );
+  static final spatialSlow = SpringDescription.withDampingRatio(
+    mass: 1,
+    stiffness: 200,
+    ratio: 0.8,
+  );
   static final effectsDefault = SpringDescription.withDampingRatio(
-      mass: 1, stiffness: 1600, ratio: 1.0);
+    mass: 1,
+    stiffness: 1600,
+    ratio: 1.0,
+  );
+
+  static final _settleCache = <SpringDescription, Duration>{};
+
+  /// How long [spring] takes to come to rest when travelling from 0 to 1,
+  /// so it can drive duration-based implicit animations.
+  static Duration settle(SpringDescription spring) =>
+      _settleCache.putIfAbsent(spring, () {
+        final simulation = SpringSimulation(
+          spring,
+          0,
+          1,
+          0,
+          tolerance: const Tolerance(distance: 1e-3, velocity: 1e-2),
+        );
+        const step = 1 / 240;
+        var t = 0.0;
+        while (!simulation.isDone(t) && t < 3) {
+          t += step;
+        }
+        return Duration(
+          microseconds: (t * Duration.microsecondsPerSecond).round(),
+        );
+      });
+
+  /// [settle] for [spring], or [Duration.zero] when the platform asks for
+  /// reduced motion, so every spring resolves instantly.
+  static Duration durationOf(BuildContext context, SpringDescription spring) =>
+      MediaQuery.of(context).disableAnimations ? Duration.zero : settle(spring);
+
+  static final spatialFastCurve = AcatrainSpringCurve(spatialFast);
+  static final spatialDefaultCurve = AcatrainSpringCurve(spatialDefault);
+  static final spatialSlowCurve = AcatrainSpringCurve(spatialSlow);
+  static final effectsDefaultCurve = AcatrainSpringCurve(effectsDefault);
+}
+
+/// A [Curve] that follows a spring from 0 to 1, for duration-based
+/// animations (implicit animations, [AnimatedSwitcher], transitions).
+///
+/// By default it spans the spring's own settle time; pass [span] when the
+/// curve rides on an animation of a different length (for example an
+/// effects fade inside a spatial transition). Spatial springs overshoot,
+/// so only use critically damped ones ([AcatrainSprings.effectsDefault])
+/// for opacity.
+class AcatrainSpringCurve extends Curve {
+  AcatrainSpringCurve(this.spring, {Duration? span})
+    : _simulation = SpringSimulation(spring, 0, 1, 0),
+      _seconds =
+          (span ?? AcatrainSprings.settle(spring)).inMicroseconds /
+          Duration.microsecondsPerSecond;
+
+  final SpringDescription spring;
+  final SpringSimulation _simulation;
+  final double _seconds;
+
+  @override
+  double transformInternal(double t) => _simulation.x(t * _seconds);
 }
 
 /// Runs a single spring simulation from [begin] to [end] once, on mount.
@@ -71,12 +139,13 @@ class _AcatrainSpringInState extends State<AcatrainSpringIn>
 
   @override
   Widget build(BuildContext context) => AnimatedBuilder(
-        animation: _controller,
-        builder: (context, _) => widget.builder(
+    animation: _controller,
+    builder:
+        (context, _) => widget.builder(
           context,
           ui.lerpDouble(widget.begin, widget.end, _controller.value)!,
         ),
-      );
+  );
 }
 
 /// Material 3 Expressive "cookie"/"flower" polar shapes.
@@ -84,12 +153,12 @@ enum ExpressiveShape { cookie9, cookie12, clover4, flower6, sunny }
 
 extension on ExpressiveShape {
   (int n, double a) get _params => switch (this) {
-        ExpressiveShape.cookie9 => (9, 0.075),
-        ExpressiveShape.cookie12 => (12, 0.05),
-        ExpressiveShape.clover4 => (4, 0.16),
-        ExpressiveShape.flower6 => (6, 0.13),
-        ExpressiveShape.sunny => (8, 0.045),
-      };
+    ExpressiveShape.cookie9 => (9, 0.075),
+    ExpressiveShape.cookie12 => (12, 0.05),
+    ExpressiveShape.clover4 => (4, 0.16),
+    ExpressiveShape.flower6 => (6, 0.13),
+    ExpressiveShape.sunny => (8, 0.045),
+  };
 }
 
 const _expressiveShapeSamples = 240;
@@ -182,13 +251,13 @@ class ExpressiveBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => SizedBox(
-        width: size,
-        height: size,
-        child: CustomPaint(
-          painter: _ExpressiveShapePainter(shape: shape, color: color),
-          child: child == null ? null : Center(child: child),
-        ),
-      );
+    width: size,
+    height: size,
+    child: CustomPaint(
+      painter: _ExpressiveShapePainter(shape: shape, color: color),
+      child: child == null ? null : Center(child: child),
+    ),
+  );
 }
 
 class _ExpressiveShapePainter extends CustomPainter {
@@ -264,9 +333,24 @@ class SubjectStyle {
           ExpressiveShape.sunny,
         ];
         final triples = [
-          (colors.primary, colors.onPrimary, colors.primaryContainer, colors.onPrimaryContainer),
-          (colors.tertiary, colors.onTertiary, colors.tertiaryContainer, colors.onTertiaryContainer),
-          (colors.secondary, colors.onSecondary, colors.secondaryContainer, colors.onSecondaryContainer),
+          (
+            colors.primary,
+            colors.onPrimary,
+            colors.primaryContainer,
+            colors.onPrimaryContainer,
+          ),
+          (
+            colors.tertiary,
+            colors.onTertiary,
+            colors.tertiaryContainer,
+            colors.onTertiaryContainer,
+          ),
+          (
+            colors.secondary,
+            colors.onSecondary,
+            colors.secondaryContainer,
+            colors.onSecondaryContainer,
+          ),
         ];
         var hash = 0;
         for (final unit in subject.codeUnits) {
@@ -338,7 +422,8 @@ class _WavyProgressState extends State<WavyProgress>
     final theme = Theme.of(context);
     final reduceMotion = MediaQuery.of(context).disableAnimations;
     final active = widget.color ?? theme.colorScheme.primary;
-    final track = widget.trackColor ?? theme.colorScheme.surfaceContainerHighest;
+    final track =
+        widget.trackColor ?? theme.colorScheme.surfaceContainerHighest;
     final value = widget.value.clamp(0.0, 1.0);
     final drift = widget.animate && !reduceMotion;
     if (drift && !_phase.isAnimating) {
@@ -348,28 +433,31 @@ class _WavyProgressState extends State<WavyProgress>
     }
 
     Widget paint(double phase) => CustomPaint(
-          painter: _WavyProgressPainter(
-            value: value,
-            activeColor: active,
-            trackColor: track,
-            phase: phase,
-          ),
-        );
+      painter: _WavyProgressPainter(
+        value: value,
+        activeColor: active,
+        trackColor: track,
+        phase: phase,
+      ),
+    );
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        final width = constraints.maxWidth.isFinite ? constraints.maxWidth : 200.0;
+        final width =
+            constraints.maxWidth.isFinite ? constraints.maxWidth : 200.0;
         return Semantics(
           value: widget.semanticsLabel,
           child: SizedBox(
             width: width,
             height: widget.height,
-            child: drift
-                ? AnimatedBuilder(
-                    animation: _phase,
-                    builder: (context, _) => paint(_phase.value * 2 * math.pi),
-                  )
-                : paint(0),
+            child:
+                drift
+                    ? AnimatedBuilder(
+                      animation: _phase,
+                      builder:
+                          (context, _) => paint(_phase.value * 2 * math.pi),
+                    )
+                    : paint(0),
           ),
         );
       },
@@ -399,11 +487,12 @@ class _WavyProgressPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final midY = size.height / 2;
     final dotPaint = Paint()..color = activeColor;
-    final trackPaint = Paint()
-      ..color = trackColor
-      ..strokeWidth = _strokeWidth
-      ..strokeCap = StrokeCap.round
-      ..style = PaintingStyle.stroke;
+    final trackPaint =
+        Paint()
+          ..color = trackColor
+          ..strokeWidth = _strokeWidth
+          ..strokeCap = StrokeCap.round
+          ..style = PaintingStyle.stroke;
 
     if (value <= 0 || size.width <= 0) {
       canvas.drawLine(Offset(0, midY), Offset(size.width, midY), trackPaint);
@@ -412,16 +501,18 @@ class _WavyProgressPainter extends CustomPainter {
     }
 
     final activeWidth = size.width * value;
-    final activePaint = Paint()
-      ..color = activeColor
-      ..strokeWidth = _strokeWidth
-      ..strokeCap = StrokeCap.round
-      ..style = PaintingStyle.stroke;
+    final activePaint =
+        Paint()
+          ..color = activeColor
+          ..strokeWidth = _strokeWidth
+          ..strokeCap = StrokeCap.round
+          ..style = PaintingStyle.stroke;
     final activePath = Path();
     const step = 2.0;
     var started = false;
     for (var x = 0.0; x <= activeWidth; x += step) {
-      final y = midY + _amplitude * math.sin((x / _wavelength) * 2 * math.pi + phase);
+      final y =
+          midY + _amplitude * math.sin((x / _wavelength) * 2 * math.pi + phase);
       if (!started) {
         activePath.moveTo(x, y);
         started = true;
@@ -433,7 +524,11 @@ class _WavyProgressPainter extends CustomPainter {
 
     final trackStart = (activeWidth + _gap).clamp(0.0, size.width);
     if (trackStart < size.width) {
-      canvas.drawLine(Offset(trackStart, midY), Offset(size.width, midY), trackPaint);
+      canvas.drawLine(
+        Offset(trackStart, midY),
+        Offset(size.width, midY),
+        trackPaint,
+      );
     }
     canvas.drawCircle(Offset(size.width - 2, midY), 2, dotPaint);
   }
@@ -471,7 +566,10 @@ class AcatrainFlatBar extends StatelessWidget {
     final v = value.clamp(0.0, 1.0);
     const gap = 3.0;
     final activeWidth = v <= 0 ? 0.0 : math.max(0.0, (width - gap) * v);
-    final trackWidth = math.max(0.0, width - (activeWidth > 0 ? gap : 0) - activeWidth);
+    final trackWidth = math.max(
+      0.0,
+      width - (activeWidth > 0 ? gap : 0) - activeWidth,
+    );
     return SizedBox(
       width: width,
       height: height,
@@ -520,15 +618,15 @@ class AcatrainTones extends ThemeExtension<AcatrainTones> {
   );
 
   static AcatrainTones dark(ColorScheme colors) => AcatrainTones(
-        heroAccent: colors.primary,
-        heroBody: colors.onPrimaryContainer,
-      );
+    heroAccent: colors.primary,
+    heroBody: colors.onPrimaryContainer,
+  );
 
   @override
   AcatrainTones copyWith({Color? heroAccent, Color? heroBody}) => AcatrainTones(
-        heroAccent: heroAccent ?? this.heroAccent,
-        heroBody: heroBody ?? this.heroBody,
-      );
+    heroAccent: heroAccent ?? this.heroAccent,
+    heroBody: heroBody ?? this.heroBody,
+  );
 
   @override
   AcatrainTones lerp(ThemeExtension<AcatrainTones>? other, double t) {

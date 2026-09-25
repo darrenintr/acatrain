@@ -606,9 +606,10 @@ class _StudyPageState extends State<StudyPage> {
                     padding: AcatrainLayout.pagePadding(context),
                     children: [
                       AnimatedSwitcher(
-                        duration: acatrainMediumMotion,
-                        switchInCurve: Curves.easeOutCubic,
-                        switchOutCurve: Curves.easeInCubic,
+                        duration: AcatrainSprings.durationOf(
+                          context,
+                          AcatrainSprings.spatialDefault,
+                        ),
                         layoutBuilder:
                             (currentChild, previousChildren) => Stack(
                               alignment: Alignment.topCenter,
@@ -621,9 +622,17 @@ class _StudyPageState extends State<StudyPage> {
                           final slide = Tween<Offset>(
                             begin: const Offset(0.035, 0),
                             end: Offset.zero,
-                          ).animate(animation);
+                          ).animate(
+                            CurvedAnimation(
+                              parent: animation,
+                              curve: AcatrainSprings.spatialDefaultCurve,
+                            ),
+                          );
                           return FadeTransition(
-                            opacity: animation,
+                            opacity: CurvedAnimation(
+                              parent: animation,
+                              curve: _contentFadeCurve,
+                            ),
                             child: SlideTransition(
                               position: slide,
                               child: child,
@@ -838,6 +847,13 @@ class _Chip extends StatelessWidget {
   );
 }
 
+/// Session content fade: the effects spring, stretched over the spatial
+/// spring's settle time that drives the accompanying slide.
+final _contentFadeCurve = AcatrainSpringCurve(
+  AcatrainSprings.effectsDefault,
+  span: AcatrainSprings.settle(AcatrainSprings.spatialDefault),
+);
+
 class _Flashcard extends StatelessWidget {
   const _Flashcard({
     required this.item,
@@ -886,8 +902,11 @@ class _Flashcard extends StatelessWidget {
               child: Padding(
                 padding: const EdgeInsets.all(8),
                 child: AnimatedSize(
-                  duration: reduceMotion ? Duration.zero : acatrainMediumMotion,
-                  curve: Curves.easeOutCubic,
+                  duration: AcatrainSprings.durationOf(
+                    context,
+                    AcatrainSprings.spatialDefault,
+                  ),
+                  curve: AcatrainSprings.spatialDefaultCurve,
                   alignment: Alignment.topCenter,
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
@@ -996,7 +1015,12 @@ class _Flashcard extends StatelessWidget {
         ),
         const SizedBox(height: 24),
         AnimatedSwitcher(
-          duration: acatrainFastMotion,
+          duration: AcatrainSprings.durationOf(
+            context,
+            AcatrainSprings.effectsDefault,
+          ),
+          switchInCurve: AcatrainSprings.effectsDefaultCurve,
+          switchOutCurve: AcatrainSprings.effectsDefaultCurve,
           child:
               revealed
                   ? Column(
@@ -1007,20 +1031,24 @@ class _Flashcard extends StatelessWidget {
                           Expanded(
                             child: SizedBox(
                               height: 64,
-                              child: FilledButton.icon(
-                                onPressed: saving ? null : onAgain,
-                                style: FilledButton.styleFrom(
-                                  backgroundColor: colors.secondaryContainer,
-                                  foregroundColor: colors.onSecondaryContainer,
-                                  shape: const RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.horizontal(
-                                      left: Radius.circular(32),
-                                      right: Radius.circular(10),
+                              child: AcatrainPressScale(
+                                pressedScale: 0.96,
+                                child: FilledButton.icon(
+                                  onPressed: saving ? null : onAgain,
+                                  style: FilledButton.styleFrom(
+                                    backgroundColor: colors.secondaryContainer,
+                                    foregroundColor:
+                                        colors.onSecondaryContainer,
+                                    shape: const RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.horizontal(
+                                        left: Radius.circular(32),
+                                        right: Radius.circular(10),
+                                      ),
                                     ),
                                   ),
+                                  icon: const Icon(Icons.replay_rounded),
+                                  label: Text(tr(context, 'Again')),
                                 ),
-                                icon: const Icon(Icons.replay_rounded),
-                                label: Text(tr(context, 'Again')),
                               ),
                             ),
                           ),
@@ -1028,18 +1056,21 @@ class _Flashcard extends StatelessWidget {
                           Expanded(
                             child: SizedBox(
                               height: 64,
-                              child: FilledButton.icon(
-                                onPressed: saving ? null : onGotIt,
-                                style: FilledButton.styleFrom(
-                                  shape: const RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.horizontal(
-                                      left: Radius.circular(10),
-                                      right: Radius.circular(32),
+                              child: AcatrainPressScale(
+                                pressedScale: 0.96,
+                                child: FilledButton.icon(
+                                  onPressed: saving ? null : onGotIt,
+                                  style: FilledButton.styleFrom(
+                                    shape: const RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.horizontal(
+                                        left: Radius.circular(10),
+                                        right: Radius.circular(32),
+                                      ),
                                     ),
                                   ),
+                                  icon: const Icon(Icons.check_rounded),
+                                  label: Text(tr(context, 'Got it')),
                                 ),
-                                icon: const Icon(Icons.check_rounded),
-                                label: Text(tr(context, 'Got it')),
                               ),
                             ),
                           ),
