@@ -14,7 +14,9 @@ import 'store.dart';
 import 'study_page.dart';
 import 'subscription.dart';
 import 'google_identity.dart';
+import 'haptics.dart';
 import 'language.dart';
+import 'loading_indicator.dart';
 import 'launch_screen.dart';
 import 'plan_icon.dart';
 
@@ -103,6 +105,18 @@ class AcatrainApp extends StatelessWidget {
           // A slower morph so switching plans feels like an unveiling.
           themeAnimationDuration: const Duration(milliseconds: 900),
           themeAnimationCurve: Curves.easeInOutCubic,
+          // Settings → Motion → Reduced forces the reduce-motion path
+          // everywhere, whatever the device setting says.
+          builder:
+              (context, child) =>
+                  store.motion == 'reduced'
+                      ? MediaQuery(
+                        data: MediaQuery.of(
+                          context,
+                        ).copyWith(disableAnimations: true),
+                        child: child!,
+                      )
+                      : child!,
           theme: _theme(Brightness.light, AcatrainPlan.fromId(store.plan)),
           darkTheme: _theme(Brightness.dark, AcatrainPlan.fromId(store.plan)),
           home:
@@ -381,11 +395,41 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    store.contentReleases.addListener(_contentReady);
+  }
+
+  /// New content has been applied; sessions already open keep their items.
+  void _contentReady() {
+    if (!mounted) return;
+    final theme = Theme.of(context);
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: theme.colorScheme.inverseSurface,
+          content: Text(
+            tr(
+              context,
+              'New study content is ready. It applies to your next session.',
+            ),
+          ),
+          action: SnackBarAction(
+            label: tr(context, 'Refresh'),
+            onPressed: () {
+              Navigator.of(context).popUntil((route) => route.isFirst);
+              setState(() => _page = 0);
+            },
+          ),
+        ),
+      );
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    store.contentReleases.removeListener(_contentReady);
+    _hapticPreview?.cancel();
     super.dispose();
   }
 
@@ -401,6 +445,7 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   }
 
   void _open(StudySet set) {
+    unawaited(Haptics.play(AcHaptic.tap));
     Navigator.push(
       context,
       AcatrainPageRoute<void>(builder: (_) => SetPage(set: set, store: store)),
@@ -408,6 +453,7 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   }
 
   void _startSession(StudySet set, List<StudyItem> items, bool quiz) {
+    unawaited(Haptics.play(AcHaptic.tap));
     Navigator.push(
       context,
       AcatrainPageRoute<void>(
@@ -417,7 +463,40 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
     );
   }
 
-  void _selectPage(int index) => setState(() => _page = index);
+  void _selectPage(int index) {
+    if (index == _page) return;
+    unawaited(Haptics.play(AcHaptic.tick));
+    setState(() => _page = index);
+  }
+
+  Timer? _hapticPreview;
+
+  /// Plays a tick, then previews `confirm` at the new strength.
+  void _setHapticLevel(int level) {
+    unawaited(store.setHapticLevel(level));
+    unawaited(Haptics.play(AcHaptic.tick));
+    _hapticPreview?.cancel();
+    if (level > 0) {
+      _hapticPreview = Timer(
+        const Duration(milliseconds: 260),
+        () => Haptics.play(AcHaptic.confirm),
+      );
+    }
+  }
+
+  /// A content check the learner started: unlike background syncs, it
+  /// reports its outcome with a haptic.
+  Future<void> _syncContentByUser() async {
+    unawaited(Haptics.play(AcHaptic.tap));
+    final ok = await store.syncContent();
+    unawaited(Haptics.play(ok ? AcHaptic.done : AcHaptic.error));
+  }
+
+  Future<void> _syncProgressByUser() async {
+    unawaited(Haptics.play(AcHaptic.tap));
+    final ok = await store.syncProgress();
+    unawaited(Haptics.play(ok ? AcHaptic.done : AcHaptic.error));
+  }
 
   void _searchLibrary(String query) {
     setState(() {
@@ -458,6 +537,7 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
                         )
                         : const SizedBox(key: ValueKey('idle'), height: 2),
               ),
+              if (store.offline) const _OfflineBanner(),
               Expanded(
                 child: Row(
                   children: [
@@ -586,7 +666,7 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   List<Widget> _appBarActions(ThemeData theme) => [
     IconButton(
       tooltip: tr(context, 'Sync content'),
-      onPressed: store.busy ? null : store.syncContent,
+      onPressed: store.busy ? null : _syncContentByUser,
       icon: const Icon(Icons.sync_rounded),
     ),
     Padding(
@@ -1003,120 +1083,141 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   }
 
   Widget _review(ThemeData theme, {required bool expanded}) {
-    final caughtUp = store.bundle.sets.every((s) => store.dueCount(s) == 0);
+    final colors = theme.colorScheme;
+    final totalDue = store.totalDue;
+    final totalMissed = store.totalMissed;
+    final caughtUp = totalDue == 0 && totalMissed == 0;
+    // The practise button covers one set (progress is kept per set), so the
+    // missed cards come from the set with the most recent miss.
+    final misses = store.recentMisses;
+    final missedSet = misses.isEmpty ? null : misses.first.$1;
+    final setMisses =
+        missedSet == null
+            ? const <(StudySet, StudyItem, DateTime)>[]
+            : misses.where((m) => m.$1.id == missedSet.id).toList();
+    final shownMisses = setMisses.take(3).toList();
+    final reviewSets =
+        store.bundle.sets
+            .where((s) => store.dueCount(s) > 0 || store.missedCount(s) > 0)
+            .toList();
+
+    Widget sectionTitle(String text) => Padding(
+      padding: const EdgeInsets.fromLTRB(4, 24, 4, 12),
+      child: Text(text, style: theme.textTheme.titleLarge),
+    );
+
     return FadingListView(
       padding: AcatrainLayout.pagePadding(context),
       children: [
-        if (expanded) _pageHeader(theme, tr(context, 'Review, not relearn.')),
+        if (expanded) _pageHeader(theme, tr(context, 'Review')),
         if (!expanded) ...[
           const SizedBox(height: 4),
-          Text(
-            tr(context, 'Review, not relearn.'),
-            style: theme.textTheme.displaySmall,
-          ),
-          const SizedBox(height: 8),
-          Text(
-            tr(
-              context,
-              'Due items rise to the top. Missed answers stay easy to revisit.',
-            ),
-            style: theme.textTheme.bodyLarge?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
-          const SizedBox(height: 22),
+          Text(tr(context, 'Review'), style: theme.textTheme.displaySmall),
+          const SizedBox(height: 6),
         ],
-        if (caughtUp)
+        Text(
+          tr(
+            context,
+            'Due items rise to the top. Missed answers stay easy to revisit.',
+          ),
+          style: theme.textTheme.bodyLarge?.copyWith(
+            color: colors.onSurfaceVariant,
+          ),
+        ),
+        const SizedBox(height: 20),
+        _ReviewSummary(
+          due: totalDue,
+          missed: totalMissed,
+          doneToday: store.doneToday,
+        ),
+        if (caughtUp) ...[
+          const SizedBox(height: 16),
           _EmptyState(
             icon: Icons.done_all_rounded,
             title: tr(context, 'You are caught up'),
             message: tr(context, 'There are no review items due right now.'),
+            actionLabel: tr(context, 'Browse'),
+            onAction: () {
+              unawaited(Haptics.play(AcHaptic.tap));
+              setState(() => _page = 1);
+            },
           ),
-        ...store.bundle.sets.map((set) {
-          final mistakes =
-              set.items.where((i) => store.isWrong(set, i)).toList();
-          final due = store.dueCount(set);
-          final style = SubjectStyle.of(context, set.subject);
-          return Padding(
-            padding: const EdgeInsets.only(bottom: 10),
-            child: Card(
-              child: Padding(
-                padding: const EdgeInsets.all(20),
-                child: LayoutBuilder(
-                  builder: (context, constraints) {
-                    final horizontal = constraints.maxWidth >= 620;
-                    final info = Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        ExpressiveBadge(
-                          shape: style.shape,
-                          size: 44,
-                          color: style.container,
-                          child: Icon(
-                            style.icon,
-                            color: style.onContainer,
-                            size: 22,
-                          ),
-                        ),
-                        const SizedBox(width: 14),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                set.title,
-                                style: theme.textTheme.titleMedium,
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                isCantonese(context)
-                                    ? '$due 題待溫習 · ${mistakes.length} 題錯題'
-                                    : '$due due · ${mistakes.length} missed',
-                                style: theme.textTheme.bodyMedium?.copyWith(
-                                  color: theme.colorScheme.onSurfaceVariant,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    );
-                    final actions = Wrap(
-                      spacing: 10,
-                      runSpacing: 10,
-                      children: [
-                        FilledButton(
-                          onPressed: () => _open(set),
-                          child: Text(tr(context, 'Review set')),
-                        ),
-                        OutlinedButton(
-                          onPressed:
-                              mistakes.isEmpty
-                                  ? null
-                                  : () => _startSession(set, mistakes, false),
-                          child: Text(tr(context, 'Practise mistakes')),
-                        ),
-                      ],
-                    );
-                    if (!horizontal) {
-                      return Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [info, const SizedBox(height: 16), actions],
-                      );
-                    }
-                    return Row(
-                      children: [
-                        Expanded(child: info),
-                        const SizedBox(width: 20),
-                        actions,
-                      ],
-                    );
-                  },
+        ],
+        if (shownMisses.isNotEmpty) ...[
+          sectionTitle(tr(context, 'Missed recently')),
+          for (var i = 0; i < shownMisses.length; i++)
+            Padding(
+              padding: EdgeInsets.only(
+                bottom: i == shownMisses.length - 1 ? 0 : 3,
+              ),
+              child: _MissedCard(
+                set: shownMisses[i].$1,
+                item: shownMisses[i].$2,
+                missedAt: shownMisses[i].$3,
+                radius: segmentRadius(
+                  i,
+                  shownMisses.length,
+                  outer: AcatrainRadii.xl,
+                  inner: 6,
                 ),
               ),
             ),
-          );
-        }),
+          const SizedBox(height: 12),
+          SizedBox(
+            height: 48,
+            child: FilledButton.icon(
+              style: FilledButton.styleFrom(
+                minimumSize: const Size.fromHeight(48),
+              ),
+              onPressed:
+                  () => _startSession(
+                    missedSet!,
+                    [for (final m in setMisses) m.$2],
+                    false,
+                  ),
+              icon: const Icon(Icons.replay_rounded),
+              label: Text(
+                isCantonese(context)
+                    ? '練習 ${setMisses.length} 題錯題'
+                    : 'Practise ${setMisses.length} mistake${setMisses.length == 1 ? '' : 's'}',
+              ),
+            ),
+          ),
+        ],
+        if (reviewSets.isNotEmpty) ...[
+          sectionTitle(tr(context, 'Due by set')),
+          for (var i = 0; i < reviewSets.length; i++)
+            Padding(
+              padding: EdgeInsets.only(
+                bottom: i == reviewSets.length - 1 ? 0 : 3,
+              ),
+              child: _DueSetRow(
+                set: reviewSets[i],
+                due: store.dueCount(reviewSets[i]),
+                missed: store.missedCount(reviewSets[i]),
+                radius: segmentRadius(
+                  i,
+                  reviewSets.length,
+                  outer: AcatrainRadii.xl,
+                  inner: 6,
+                ),
+                onReview: () {
+                  final set = reviewSets[i];
+                  final due = store.dueItems(set);
+                  if (due.isEmpty) {
+                    _startSession(
+                      set,
+                      set.items.where((it) => store.isWrong(set, it)).toList(),
+                      false,
+                    );
+                  } else {
+                    _startSession(set, due, false);
+                  }
+                },
+              ),
+            ),
+        ],
+        const SizedBox(height: 24),
       ],
     );
   }
@@ -1169,7 +1270,7 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
                                 ? null
                                 : store.uid == null
                                 ? _login
-                                : store.syncProgress,
+                                : _syncProgressByUser,
                         icon: Icon(
                           store.uid == null
                               ? Icons.login_rounded
@@ -1218,6 +1319,78 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
                           onSelected: (_) => store.setAppearance(value),
                         ),
                     ],
+                  ),
+                ),
+              ),
+              SizedBox(
+                width: cardWidth,
+                child: _SettingsCard(
+                  icon: Icons.vibration_rounded,
+                  title: tr(context, 'Haptics'),
+                  body: tr(context, 'Short, tuned vibrations for each action.'),
+                  footer: tr(
+                    context,
+                    'Acatrain stays silent when system haptics are off.',
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      AcatrainSegmentedButton<int>(
+                        label: tr(context, 'Haptic strength'),
+                        segments: [
+                          (0, tr(context, 'Off')),
+                          (1, tr(context, 'Subtle')),
+                          (2, tr(context, 'Standard')),
+                        ],
+                        selected: store.hapticLevel,
+                        onChanged: _setHapticLevel,
+                      ),
+                      const SizedBox(height: 12),
+                      FilledButton.tonalIcon(
+                        onPressed:
+                            store.hapticLevel == 0
+                                ? null
+                                : () => Haptics.play(AcHaptic.confirm),
+                        style: FilledButton.styleFrom(
+                          minimumSize: const Size(0, 48),
+                        ),
+                        icon: const Icon(Icons.touch_app_outlined),
+                        label: Text(tr(context, 'Try it')),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              SizedBox(
+                width: cardWidth,
+                child: _SettingsCard(
+                  icon: Icons.animation_rounded,
+                  title: tr(context, 'Motion'),
+                  body: tr(
+                    context,
+                    'Reduced motion removes springs and loops.',
+                  ),
+                  footer: tr(
+                    context,
+                    'Match system follows your device setting.',
+                  ),
+                  child: AcatrainSegmentedButton<String>(
+                    label: tr(context, 'Motion'),
+                    segments: [
+                      ('system', tr(context, 'Match system')),
+                      ('reduced', tr(context, 'Reduced')),
+                    ],
+                    selected: store.motion,
+                    onChanged: (value) {
+                      unawaited(
+                        Haptics.play(
+                          value == 'reduced'
+                              ? AcHaptic.toggleOn
+                              : AcHaptic.toggleOff,
+                        ),
+                      );
+                      unawaited(store.setMotion(value));
+                    },
                   ),
                 ),
               ),
@@ -1277,44 +1450,7 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
               ),
               SizedBox(
                 width: cardWidth,
-                child: _SettingsCard(
-                  icon: Icons.cloud_outlined,
-                  title: tr(context, 'Live content'),
-                  body: tr(
-                    context,
-                    store.cloudConfigured
-                        ? 'Connected to your published content service.'
-                        : 'Bundled demo. Cloud service is not configured.',
-                  ),
-                  footer:
-                      isCantonese(context)
-                          ? '版本 ${store.releaseId}'
-                          : 'Release ${store.releaseId}',
-                  child: OutlinedButton.icon(
-                    onPressed: store.busy ? null : store.syncContent,
-                    icon: const Icon(Icons.sync_rounded),
-                    label: Text(tr(context, 'Check for content updates')),
-                  ),
-                ),
-              ),
-              SizedBox(
-                width: cardWidth,
-                child: _SettingsCard(
-                  icon: Icons.speed_rounded,
-                  title: tr(context, 'Display & motion'),
-                  body: tr(
-                    context,
-                    'Animations follow the display refresh rate.',
-                  ),
-                  footer: tr(
-                    context,
-                    'The device can lower its refresh rate to save power.',
-                  ),
-                  child: Text(
-                    tr(context, 'Motion follows your device settings.'),
-                    style: theme.textTheme.bodyMedium,
-                  ),
-                ),
+                child: _StudyContentCard(store: store),
               ),
             ],
           );
@@ -2747,16 +2883,21 @@ class _EmptyState extends StatelessWidget {
     required this.icon,
     required this.title,
     required this.message,
+    this.actionLabel,
+    this.onAction,
   });
 
   final IconData icon;
   final String title;
   final String message;
+  final String? actionLabel;
+  final VoidCallback? onAction;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Container(
+      width: double.infinity,
       padding: const EdgeInsets.all(32),
       decoration: BoxDecoration(
         color: theme.colorScheme.surfaceContainerLow,
@@ -2775,7 +2916,11 @@ class _EmptyState extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 16),
-          Text(title, style: theme.textTheme.titleLarge),
+          Text(
+            title,
+            textAlign: TextAlign.center,
+            style: theme.textTheme.titleLarge,
+          ),
           const SizedBox(height: 6),
           Text(
             message,
@@ -2784,7 +2929,540 @@ class _EmptyState extends StatelessWidget {
               color: theme.colorScheme.onSurfaceVariant,
             ),
           ),
+          if (actionLabel != null) ...[
+            const SizedBox(height: 20),
+            FilledButton.tonal(
+              onPressed: onAction,
+              style: FilledButton.styleFrom(minimumSize: const Size(0, 48)),
+              child: Text(actionLabel!),
+            ),
+          ],
         ],
+      ),
+    );
+  }
+}
+
+/// Due now, missed and done today, as a connected three-part strip.
+class _ReviewSummary extends StatelessWidget {
+  const _ReviewSummary({
+    required this.due,
+    required this.missed,
+    required this.doneToday,
+  });
+
+  final int due;
+  final int missed;
+  final int doneToday;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final stats = [
+      ('$due', tr(context, 'due now'), colors.onSurface),
+      ('$missed', tr(context, 'missed'), missed > 0 ? colors.error : colors.onSurface),
+      ('$doneToday', tr(context, 'done today'), colors.onSurface),
+    ];
+    return Semantics(
+      liveRegion: true,
+      child: IntrinsicHeight(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            for (final (i, stat) in stats.indexed)
+              Expanded(
+                child: Padding(
+                  padding: EdgeInsets.only(
+                    left: i == 0 ? 0 : 1.5,
+                    right: i == stats.length - 1 ? 0 : 1.5,
+                  ),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 14,
+                    ),
+                    decoration: BoxDecoration(
+                      color: colors.surfaceContainerLow,
+                      borderRadius: _rowSegmentRadius(i, stats.length),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          stat.$1,
+                          style: theme.textTheme.titleLarge?.copyWith(
+                            fontSize: 24,
+                            fontWeight: acatrainWeight(750),
+                            color: stat.$3,
+                            fontFeatures: const [FontFeature.tabularFigures()],
+                          ),
+                        ),
+                        Text(
+                          stat.$2,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: colors.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// [segmentRadius] turned sideways, for a horizontal connected group.
+BorderRadius _rowSegmentRadius(int index, int count) {
+  const outer = Radius.circular(AcatrainRadii.lPlus);
+  const inner = Radius.circular(6);
+  if (count <= 1) return const BorderRadius.all(outer);
+  return BorderRadius.horizontal(
+    left: index == 0 ? outer : inner,
+    right: index == count - 1 ? outer : inner,
+  );
+}
+
+class _MissedCard extends StatelessWidget {
+  const _MissedCard({
+    required this.set,
+    required this.item,
+    required this.missedAt,
+    required this.radius,
+  });
+
+  final StudySet set;
+  final StudyItem item;
+  final DateTime missedAt;
+  final BorderRadius radius;
+
+  String _when(BuildContext context) {
+    final now = DateTime.now();
+    final days =
+        DateTime(now.year, now.month, now.day)
+            .difference(DateTime(missedAt.year, missedAt.month, missedAt.day))
+            .inDays;
+    if (isCantonese(context)) {
+      return days <= 0
+          ? '今日答錯'
+          : days == 1
+          ? '尋日答錯'
+          : '$days 日前答錯';
+    }
+    return days <= 0
+        ? 'missed today'
+        : days == 1
+        ? 'missed yesterday'
+        : 'missed $days days ago';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 14, 16, 14),
+      decoration: BoxDecoration(
+        color: colors.surfaceContainerLow,
+        borderRadius: radius,
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: colors.errorContainer,
+              borderRadius: BorderRadius.circular(AcatrainRadii.m),
+            ),
+            alignment: Alignment.center,
+            child: Icon(
+              Icons.undo_rounded,
+              size: 22,
+              color: colors.onErrorContainer,
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(item.prompt, style: theme.textTheme.titleMedium),
+                const SizedBox(height: 2),
+                Text(
+                  '${set.subject} · ${_when(context)}',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: colors.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DueSetRow extends StatelessWidget {
+  const _DueSetRow({
+    required this.set,
+    required this.due,
+    required this.missed,
+    required this.radius,
+    required this.onReview,
+  });
+
+  final StudySet set;
+  final int due;
+  final int missed;
+  final BorderRadius radius;
+  final VoidCallback onReview;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final style = SubjectStyle.of(context, set.subject);
+    final caption = theme.textTheme.bodySmall?.copyWith(
+      color: colors.onSurfaceVariant,
+    );
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 12, 12, 12),
+      decoration: BoxDecoration(
+        color: colors.surfaceContainerLow,
+        borderRadius: radius,
+      ),
+      child: Row(
+        children: [
+          ExpressiveBadge(
+            shape: style.shape,
+            size: 44,
+            color: style.container,
+            child: Icon(style.icon, color: style.onContainer, size: 22),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  set.title,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.titleMedium,
+                ),
+                const SizedBox(height: 2),
+                Text.rich(
+                  TextSpan(
+                    style: caption,
+                    children: [
+                      TextSpan(
+                        text: isCantonese(context) ? '$due 題待溫習' : '$due due',
+                      ),
+                      if (missed > 0) ...[
+                        const TextSpan(text: ' · '),
+                        TextSpan(
+                          text:
+                              isCantonese(context)
+                                  ? '$missed 題錯題'
+                                  : '$missed missed',
+                          style: TextStyle(color: colors.error),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          FilledButton.tonal(
+            onPressed: onReview,
+            style: FilledButton.styleFrom(
+              minimumSize: const Size(0, 40),
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              // Keeps a 48dp touch target around the 40dp pill.
+              tapTargetSize: MaterialTapTargetSize.padded,
+              textStyle: theme.textTheme.labelLarge,
+            ),
+            child: Text(tr(context, 'Review')),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _OfflineBanner extends StatelessWidget {
+  const _OfflineBanner();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Semantics(
+      liveRegion: true,
+      child: Container(
+        width: double.infinity,
+        color: theme.colorScheme.surfaceContainerHighest,
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+        child: Row(
+          children: [
+            Icon(
+              Icons.cloud_off_rounded,
+              size: 20,
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                tr(context, 'Offline. Studying from saved content.'),
+                style: theme.textTheme.bodyMedium,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+enum _CheckPhase { idle, busy, done, failed }
+
+/// The study content row in Settings: an icon button starts a check, the
+/// expressive loading indicator shows only if it takes over 400 ms, and the
+/// outcome turns into a check (with `done`) or an error card (with `error`).
+class _StudyContentCard extends StatefulWidget {
+  const _StudyContentCard({required this.store});
+  final AppStore store;
+
+  @override
+  State<_StudyContentCard> createState() => _StudyContentCardState();
+}
+
+class _StudyContentCardState extends State<_StudyContentCard> {
+  var _phase = _CheckPhase.idle;
+  var _showLoader = false;
+  Timer? _loaderTimer;
+  Timer? _resetTimer;
+
+  AppStore get store => widget.store;
+
+  @override
+  void dispose() {
+    _loaderTimer?.cancel();
+    _resetTimer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _check() async {
+    if (_phase == _CheckPhase.busy || store.busy) return;
+    unawaited(Haptics.play(AcHaptic.tap));
+    _resetTimer?.cancel();
+    setState(() {
+      _phase = _CheckPhase.busy;
+      _showLoader = false;
+    });
+    _loaderTimer = Timer(const Duration(milliseconds: 400), () {
+      if (mounted) setState(() => _showLoader = true);
+    });
+    final ok = await store.syncContent();
+    _loaderTimer?.cancel();
+    if (!mounted) return;
+    setState(() => _phase = ok ? _CheckPhase.done : _CheckPhase.failed);
+    unawaited(Haptics.play(ok ? AcHaptic.done : AcHaptic.error));
+    if (ok) {
+      _resetTimer = Timer(const Duration(milliseconds: 2600), () {
+        if (mounted) setState(() => _phase = _CheckPhase.idle);
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final reduceMotion = MediaQuery.of(context).disableAnimations;
+    final label = switch (_phase) {
+      _CheckPhase.busy => tr(context, 'Checking for updates…'),
+      _CheckPhase.done => tr(context, 'Up to date · checked just now'),
+      _ =>
+        store.cloudConfigured
+            ? (isCantonese(context)
+                ? '版本 ${store.releaseId}'
+                : 'Release ${store.releaseId}')
+            : tr(context, 'Bundled demo · works offline'),
+    };
+
+    final Widget trailing = switch (_phase) {
+      _CheckPhase.busy =>
+        _showLoader
+            ? const AcatrainLoadingIndicator(
+              key: ValueKey('loading'),
+              size: 40,
+              semanticsLabel: 'Checking for updates',
+            )
+            : const SizedBox(key: ValueKey('waiting'), width: 48, height: 48),
+      _CheckPhase.done => AcatrainSpringIn(
+        key: const ValueKey('done'),
+        disabled: reduceMotion,
+        spring: AcatrainSprings.spatialFast,
+        builder:
+            (context, t) => Transform.rotate(
+              angle: -60 * (1 - t) * 3.141592653589793 / 180,
+              child: Transform.scale(
+                scale: 0.3 + 0.7 * t,
+                child: SizedBox(
+                  width: 48,
+                  height: 48,
+                  child: Icon(
+                    Icons.check_circle_rounded,
+                    color: colors.primary,
+                    semanticLabel: tr(context, 'Up to date'),
+                  ),
+                ),
+              ),
+            ),
+      ),
+      _ => IconButton(
+        key: const ValueKey('sync'),
+        tooltip: tr(context, 'Check for content updates'),
+        onPressed: store.busy ? null : _check,
+        icon: const Icon(Icons.sync_rounded),
+      ),
+    };
+
+    return _SettingsCard(
+      icon: Icons.cloud_sync_outlined,
+      title: tr(context, 'Study content'),
+      body: tr(
+        context,
+        store.cloudConfigured
+            ? 'Connected to your published content service.'
+            : 'Bundled demo. Cloud service is not configured.',
+      ),
+      footer: tr(context, 'Study content keeps working offline.'),
+      child: AnimatedSize(
+        duration: AcatrainSprings.durationOf(
+          context,
+          AcatrainSprings.spatialDefault,
+        ),
+        curve: AcatrainSprings.spatialDefaultCurve,
+        alignment: Alignment.topCenter,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Semantics(
+                    liveRegion: true,
+                    child: Text(label, style: theme.textTheme.bodyLarge),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                SizedBox(
+                  width: 48,
+                  height: 48,
+                  child: Center(
+                    child: AnimatedSwitcher(
+                      duration: AcatrainSprings.durationOf(
+                        context,
+                        AcatrainSprings.effectsDefault,
+                      ),
+                      child: trailing,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            if (_phase == _CheckPhase.failed) ...[
+              const SizedBox(height: 12),
+              AcatrainSpringIn(
+                disabled: reduceMotion,
+                spring: AcatrainSprings.spatialDefault,
+                builder:
+                    (context, t) => Opacity(
+                      opacity: t.clamp(0.0, 1.0),
+                      child: Transform.translate(
+                        offset: Offset(0, 12 * (1 - t)),
+                        child: _ErrorCard(
+                          message: tr(context, 'Could not check for updates.'),
+                          detail: tr(context, store.status),
+                          onRetry: _check,
+                        ),
+                      ),
+                    ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ErrorCard extends StatelessWidget {
+  const _ErrorCard({
+    required this.message,
+    required this.onRetry,
+    this.detail,
+  });
+
+  final String message;
+  final String? detail;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    return Semantics(
+      liveRegion: true,
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(16, 14, 8, 14),
+        decoration: BoxDecoration(
+          color: colors.errorContainer,
+          borderRadius: BorderRadius.circular(AcatrainRadii.l),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.error_outline_rounded, color: colors.onErrorContainer),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    message,
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      color: colors.onErrorContainer,
+                    ),
+                  ),
+                  if (detail != null)
+                    Text(
+                      detail!,
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: colors.onErrorContainer,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            TextButton(
+              onPressed: onRetry,
+              style: TextButton.styleFrom(
+                foregroundColor: colors.onErrorContainer,
+                minimumSize: const Size(0, 48),
+              ),
+              child: Text(tr(context, 'Try again')),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -2827,6 +3505,7 @@ class _AuthSheetState extends State<_AuthSheet> {
       _notice = null;
     });
     final ok = await action();
+    if (!ok) unawaited(Haptics.play(AcHaptic.error));
     if (!mounted) return;
     if (ok && close) {
       Navigator.pop(context);

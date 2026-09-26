@@ -1,6 +1,7 @@
 # Acatrain: Material 3 Expressive redesign, implementation handoff
 
 Source design: the Design canvas "Acatrain — Expressive redesign" (https://claude.ai/artifact/3GAKn3hFq1kn4z7JUCzjg6).
+**Read `docs/design/expressive-v3.md` and `docs/design/expressive-haptics-ux.md` first: they supersede conflicting values here and in `expressive-motion.md`.** Also read `docs/design/expressive-motion.md`: it covers animations, haptics, the streak chip and the reviewed-today ring, and it is part of this job.
 Reference markup for every artboard is in `docs/design/expressive/*.dc.html`. Read those files for exact values
 (each element's inline `style="…"` is the spec). Ignore `support.js`, `<x-dc>` and the `<script type="text/x-dc">` blocks. They belong to the design tool.
 

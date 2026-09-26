@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'language.dart';
 
@@ -6,6 +8,7 @@ import 'expressive.dart';
 import 'models.dart';
 import 'store.dart';
 import 'game_page.dart';
+import 'haptics.dart';
 
 /// Renders `^2`/`^3` as superscripts and a lone `-` as a proper minus sign,
 /// for display only. Content itself is never rewritten.
@@ -541,15 +544,47 @@ class _StudyPageState extends State<StudyPage> {
   int? _selected;
   bool _revealed = false;
   bool _saving = false;
+  bool _celebrated = false;
+  Timer? _celebrateTimer;
 
   @override
   void initState() {
     super.initState();
     _items = List.of(widget.items);
+    unawaited(Haptics.prepare());
   }
 
-  Future<void> _advance(bool correct) async {
+  @override
+  void dispose() {
+    _celebrateTimer?.cancel();
+    super.dispose();
+  }
+
+  /// Plays `celebrate` once per session, when the score lands on the
+  /// finished screen (about 1 s after it arrives).
+  void _scheduleCelebrate() {
+    if (_celebrated) return;
+    _celebrated = true;
+    _celebrateTimer = Timer(
+      const Duration(milliseconds: 1000),
+      () => Haptics.play(AcHaptic.celebrate),
+    );
+  }
+
+  void _flip(bool revealed) {
+    unawaited(Haptics.play(AcHaptic.flip));
+    setState(() => _revealed = revealed);
+  }
+
+  void _select(int value) {
+    final correct = value == _items[_index].correctIndex;
+    unawaited(Haptics.play(correct ? AcHaptic.confirm : AcHaptic.reject));
+    setState(() => _selected = value);
+  }
+
+  Future<void> _advance(bool correct, {AcHaptic haptic = AcHaptic.tap}) async {
     if (_saving) return;
+    unawaited(Haptics.play(haptic));
     setState(() => _saving = true);
     final item = _items[_index];
     await widget.store.record(widget.set, item, correct);
@@ -565,10 +600,14 @@ class _StudyPageState extends State<StudyPage> {
       _revealed = false;
       _saving = false;
     });
+    if (_index >= _items.length) _scheduleCelebrate();
   }
 
   void _retryMissed() {
+    unawaited(Haptics.play(AcHaptic.tap));
+    _celebrateTimer?.cancel();
     setState(() {
+      _celebrated = false;
       _items = List.of(_missed);
       _missed.clear();
       _index = 0;
@@ -649,7 +688,10 @@ class _StudyPageState extends State<StudyPage> {
                                   total: _items.length,
                                   quiz: widget.quiz,
                                   missed: _missed.length,
-                                  onDone: () => Navigator.pop(context),
+                                  onDone: () {
+                                    unawaited(Haptics.play(AcHaptic.tap));
+                                    Navigator.pop(context);
+                                  },
                                   onRetry:
                                       _missed.isEmpty ? null : _retryMissed,
                                 )
@@ -662,10 +704,7 @@ class _StudyPageState extends State<StudyPage> {
                                             questionNumber: _index + 1,
                                             selected: _selected,
                                             saving: _saving,
-                                            onSelect:
-                                                (value) => setState(
-                                                  () => _selected = value,
-                                                ),
+                                            onSelect: _select,
                                             onContinue:
                                                 () => _advance(
                                                   _selected ==
@@ -678,16 +717,18 @@ class _StudyPageState extends State<StudyPage> {
                                             revealed: _revealed,
                                             saving: _saving,
                                             compact: compact,
-                                            onReveal:
-                                                () => setState(
-                                                  () => _revealed = true,
+                                            onReveal: () => _flip(true),
+                                            onToggle: () => _flip(!_revealed),
+                                            onAgain:
+                                                () => _advance(
+                                                  false,
+                                                  haptic: AcHaptic.again,
                                                 ),
-                                            onToggle:
-                                                () => setState(
-                                                  () => _revealed = !_revealed,
+                                            onGotIt:
+                                                () => _advance(
+                                                  true,
+                                                  haptic: AcHaptic.confirm,
                                                 ),
-                                            onAgain: () => _advance(false),
-                                            onGotIt: () => _advance(true),
                                           ),
                                 ),
                       ),
@@ -1251,6 +1292,66 @@ class _QuizCard extends StatelessWidget {
 
 enum _ChoiceState { idle, selecting, correct, wrong }
 
+/// Shakes [child] once when [active] turns true: a damped sine of −7, +5.5,
+/// −3.5, +2, −0.8, 0 dp over 420 ms, linear between keys. Its first peaks
+/// land at 59, 126 and 193 ms, where the `reject` haptic pulses fire.
+/// Reduce motion skips it.
+class _Shake extends StatefulWidget {
+  const _Shake({required this.active, required this.child});
+
+  final bool active;
+  final Widget child;
+
+  @override
+  State<_Shake> createState() => _ShakeState();
+}
+
+class _ShakeState extends State<_Shake> with SingleTickerProviderStateMixin {
+  static final _offset = TweenSequence<double>([
+    for (final (from, to, weight) in const [
+      (0.0, -7.0, 14.0),
+      (-7.0, 5.5, 16.0),
+      (5.5, -3.5, 16.0),
+      (-3.5, 2.0, 16.0),
+      (2.0, -0.8, 16.0),
+      (-0.8, 0.0, 22.0),
+    ])
+      TweenSequenceItem(tween: Tween(begin: from, end: to), weight: weight),
+  ]);
+
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 420),
+  );
+
+  @override
+  void didUpdateWidget(_Shake oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.active &&
+        !oldWidget.active &&
+        !MediaQuery.of(context).disableAnimations) {
+      _controller.forward(from: 0);
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AnimatedBuilder(
+    animation: _controller,
+    child: widget.child,
+    builder:
+        (context, child) => Transform.translate(
+          offset: Offset(_offset.evaluate(_controller), 0),
+          child: child,
+        ),
+  );
+}
+
 class _ChoiceRow extends StatelessWidget {
   const _ChoiceRow({
     required this.letter,
@@ -1346,7 +1447,7 @@ class _ChoiceRow extends StatelessWidget {
       _ => null,
     };
 
-    return Material(
+    final row = Material(
       color: background,
       borderRadius: radius,
       clipBehavior: Clip.antiAlias,
@@ -1386,6 +1487,7 @@ class _ChoiceRow extends StatelessWidget {
         ),
       ),
     );
+    return _Shake(active: state == _ChoiceState.wrong, child: row);
   }
 }
 
