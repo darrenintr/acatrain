@@ -8,6 +8,7 @@ import 'package:http/http.dart' as http;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'haptics.dart';
 import 'models.dart';
 import 'google_identity.dart';
 import 'plan_icon.dart';
@@ -26,7 +27,9 @@ class AppStore extends ChangeNotifier {
       'ACATRAIN_AUTH_CONTINUE_URL',
     ),
   }) : client = client ?? http.Client(),
-       sessionStorage = sessionStorage ?? const FlutterSecureStorage();
+       sessionStorage = sessionStorage ?? const FlutterSecureStorage() {
+    Haptics.level = hapticLevel;
+  }
 
   final SharedPreferences prefs;
   final http.Client client;
@@ -39,6 +42,14 @@ class AppStore extends ChangeNotifier {
   String releaseId = 'bundled-demo';
   String status = 'Offline ready. Your progress stays on this device.';
   bool busy = false;
+
+  /// True after a sync failed to reach the network; cleared by the next
+  /// successful request. Studying carries on from saved content.
+  bool offline = false;
+
+  /// Counts content releases applied by [syncContent], so the UI can tell
+  /// the learner that new study content is ready.
+  final contentReleases = ValueNotifier<int>(0);
   String? uid, email, displayName, _idToken, _refreshToken;
   String? _pendingGoogleToken, _pendingGoogleEmail;
   DateTime? _expiresAt;
@@ -67,6 +78,24 @@ class AppStore extends ChangeNotifier {
 
   Future<void> setAppearance(String value) async {
     await prefs.setString('appearance', value);
+    notifyListeners();
+  }
+
+  /// Haptic strength on this device: 0 off, 1 subtle, 2 standard. Not synced.
+  int get hapticLevel => (prefs.getInt('haptic-strength') ?? 2).clamp(0, 2);
+
+  Future<void> setHapticLevel(int value) async {
+    Haptics.level = value.clamp(0, 2);
+    await prefs.setInt('haptic-strength', Haptics.level);
+    notifyListeners();
+  }
+
+  /// 'system' follows the device's reduce-motion setting; 'reduced' always
+  /// takes the reduce-motion path.
+  String get motion => prefs.getString('motion') ?? 'system';
+
+  Future<void> setMotion(String value) async {
+    await prefs.setString('motion', value);
     notifyListeners();
   }
 
@@ -341,6 +370,41 @@ class AppStore extends ChangeNotifier {
   bool isWrong(StudySet set, StudyItem item) =>
       progress[item.key(set.id)]?.wrong ?? false;
 
+  int missedCount(StudySet set) =>
+      set.items.where((item) => isWrong(set, item)).length;
+
+  int get totalMissed => bundle.sets.fold(0, (n, set) => n + missedCount(set));
+
+  /// Items reviewed since local midnight.
+  int get doneToday {
+    final now = DateTime.now();
+    final midnight = DateTime(now.year, now.month, now.day);
+    return bundle.sets.fold(
+      0,
+      (n, set) =>
+          n +
+          set.items
+              .where(
+                (item) =>
+                    progress[item.key(set.id)]?.updatedAt.isAfter(midnight) ??
+                    false,
+              )
+              .length,
+    );
+  }
+
+  /// Missed items, most recent first, with when they were missed.
+  List<(StudySet, StudyItem, DateTime)> get recentMisses {
+    final misses = [
+      for (final set in bundle.sets)
+        for (final item in set.items)
+          if (isWrong(set, item))
+            (set, item, progress[item.key(set.id)]!.updatedAt.toLocal()),
+    ];
+    misses.sort((a, b) => b.$3.compareTo(a.$3));
+    return misses;
+  }
+
   int practisedCount(StudySet set) =>
       set.items.where((item) => progress.containsKey(item.key(set.id))).length;
 
@@ -382,8 +446,10 @@ class AppStore extends ChangeNotifier {
     notifyListeners();
     try {
       await action();
+      offline = false;
       return true;
     } catch (error) {
+      offline = error is! FormatException;
       status =
           error is FormatException
               ? error.message
@@ -395,14 +461,16 @@ class AppStore extends ChangeNotifier {
     }
   }
 
-  Future<void> syncContent() async {
+  /// Checks for published content. Returns whether the check succeeded.
+  Future<bool> syncContent() async {
     if (!cloudConfigured) {
       status =
           'Demo mode. Configure ACATRAIN_API_URL to receive published content.';
+      lastContentSync = DateTime.now();
       notifyListeners();
-      return;
+      return true;
     }
-    await _run(() async {
+    return _run(() async {
       final response = await client
           .get(_uri('/v1/manifest'))
           .timeout(const Duration(seconds: 20));
@@ -460,6 +528,7 @@ class AppStore extends ChangeNotifier {
       releaseId = nextId;
       lastContentSync = DateTime.now();
       status = 'New content is ready. Existing study sessions stay unchanged.';
+      contentReleases.value++;
     });
   }
 
@@ -736,8 +805,8 @@ class AppStore extends ChangeNotifier {
     return _idToken!;
   }
 
-  Future<void> syncProgress() async {
-    await _run(() async {
+  Future<bool> syncProgress() async {
+    return _run(() async {
       if (!cloudConfigured) {
         throw const FormatException(
           'Configure ACATRAIN_API_URL before syncing progress.',
@@ -787,6 +856,7 @@ class AppStore extends ChangeNotifier {
 
   @override
   void dispose() {
+    contentReleases.dispose();
     client.close();
     super.dispose();
   }

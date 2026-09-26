@@ -267,3 +267,159 @@ class AcatrainPageRoute<T> extends PageRouteBuilder<T> {
         },
       );
 }
+
+/// A Material 3 Expressive connected button group with one choice. The
+/// selected segment morphs to fully round corners on the fast spatial
+/// spring, its fill cross-fades on the effects spring, and a check pops in.
+class AcatrainSegmentedButton<T> extends StatelessWidget {
+  const AcatrainSegmentedButton({
+    super.key,
+    required this.label,
+    required this.segments,
+    required this.selected,
+    required this.onChanged,
+  });
+
+  /// The group's name for screen readers.
+  final String label;
+  final List<(T, String)> segments;
+  final T selected;
+  final ValueChanged<T> onChanged;
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+    container: true,
+    label: label,
+    explicitChildNodes: true,
+    child: Row(
+      children: [
+        for (var i = 0; i < segments.length; i++) ...[
+          if (i > 0) const SizedBox(width: 2),
+          Expanded(
+            child: _Segment(
+              label: segments[i].$2,
+              selected: segments[i].$1 == selected,
+              first: i == 0,
+              last: i == segments.length - 1,
+              onTap: () {
+                if (segments[i].$1 != selected) onChanged(segments[i].$1);
+              },
+            ),
+          ),
+        ],
+      ],
+    ),
+  );
+}
+
+class _Segment extends StatelessWidget {
+  const _Segment({
+    required this.label,
+    required this.selected,
+    required this.first,
+    required this.last,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final bool first;
+  final bool last;
+  final VoidCallback onTap;
+
+  static const _round = 24.0;
+  static const _inner = 8.0;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+    final reduceMotion = MediaQuery.of(context).disableAnimations;
+    return TweenAnimationBuilder<double>(
+      tween: Tween(end: selected ? 1 : 0),
+      duration: AcatrainSprings.durationOf(context, AcatrainSprings.spatialFast),
+      curve: AcatrainSprings.spatialFastCurve,
+      builder: (context, t, child) {
+        Radius corner(bool outer) => Radius.circular(
+          (outer ? _round : _inner) + ((_round - (outer ? _round : _inner)) * t),
+        );
+        final radius = BorderRadius.horizontal(
+          left: corner(first),
+          right: corner(last),
+        );
+        return TweenAnimationBuilder<Color?>(
+          tween: ColorTween(
+            end:
+                selected
+                    ? colors.secondaryContainer
+                    : colors.surfaceContainerHigh,
+          ),
+          // Colour changes may still cross-fade under reduced motion.
+          duration: AcatrainSprings.settle(AcatrainSprings.effectsDefault),
+          curve: AcatrainSprings.effectsDefaultCurve,
+          builder:
+              (context, fill, _) => Material(
+                color: fill,
+                borderRadius: radius,
+                clipBehavior: Clip.antiAlias,
+                child: child,
+              ),
+        );
+      },
+      child: Semantics(
+        button: true,
+        selected: selected,
+        inMutuallyExclusiveGroup: true,
+        child: InkWell(
+          onTap: onTap,
+          child: ConstrainedBox(
+            // Grows with large text instead of clipping it.
+            constraints: const BoxConstraints(minHeight: 48),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  if (selected) ...[
+                    AcatrainSpringIn(
+                      key: ValueKey(label),
+                      disabled: reduceMotion,
+                      spring: AcatrainSprings.spatialFast,
+                      builder:
+                          (context, t) => Transform.rotate(
+                            angle: -60 * (1 - t) * 3.141592653589793 / 180,
+                            child: Transform.scale(
+                              scale: 0.3 + 0.7 * t,
+                              child: Icon(
+                                Icons.check_rounded,
+                                size: 18,
+                                color: colors.onSecondaryContainer,
+                              ),
+                            ),
+                          ),
+                    ),
+                    const SizedBox(width: 6),
+                  ],
+                  Flexible(
+                    child: Text(
+                      label,
+                      maxLines: 2,
+                      textAlign: TextAlign.center,
+                      overflow: TextOverflow.ellipsis,
+                      style: textTheme.labelLarge?.copyWith(
+                        color:
+                            selected
+                                ? colors.onSecondaryContainer
+                                : colors.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}

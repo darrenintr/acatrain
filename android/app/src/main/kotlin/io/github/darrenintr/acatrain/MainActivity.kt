@@ -9,6 +9,8 @@ import io.flutter.plugin.common.MethodChannel
 class MainActivity : FlutterActivity() {
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "acatrain/haptics")
+            .setMethodCallHandler(AcatrainHaptics(applicationContext) { window?.decorView })
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "acatrain/icon")
             .setMethodCallHandler { call, result ->
                 if (call.method != "setPlan") {
