@@ -1297,6 +1297,34 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
               SizedBox(
                 width: cardWidth,
                 child: _SettingsCard(
+                  icon: Icons.palette_outlined,
+                  title: tr(context, 'Appearance'),
+                  body: tr(
+                    context,
+                    'Choose how Acatrain looks on this device.',
+                  ),
+                  footer: tr(context, 'System follows your device setting.'),
+                  child: Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      for (final (value, label) in [
+                        ('system', 'System'),
+                        ('light', 'Light'),
+                        ('dark', 'Dark'),
+                      ])
+                        ChoiceChip(
+                          label: Text(tr(context, label)),
+                          selected: store.appearance == value,
+                          onSelected: (_) => store.setAppearance(value),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+              SizedBox(
+                width: cardWidth,
+                child: _SettingsCard(
                   icon: Icons.vibration_rounded,
                   title: tr(context, 'Haptics'),
                   body: tr(context, 'Short, tuned vibrations for each action.'),
@@ -1363,34 +1391,6 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
                       );
                       unawaited(store.setMotion(value));
                     },
-                  ),
-                ),
-              ),
-              SizedBox(
-                width: cardWidth,
-                child: _SettingsCard(
-                  icon: Icons.palette_outlined,
-                  title: tr(context, 'Appearance'),
-                  body: tr(
-                    context,
-                    'Choose how Acatrain looks on this device.',
-                  ),
-                  footer: tr(context, 'System follows your device setting.'),
-                  child: Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      for (final (value, label) in [
-                        ('system', 'System'),
-                        ('light', 'Light'),
-                        ('dark', 'Dark'),
-                      ])
-                        ChoiceChip(
-                          label: Text(tr(context, label)),
-                          selected: store.appearance == value,
-                          onSelected: (_) => store.setAppearance(value),
-                        ),
-                    ],
                   ),
                 ),
               ),
