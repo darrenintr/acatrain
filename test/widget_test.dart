@@ -40,6 +40,32 @@ void main() {
     await tester.pumpWidget(const SizedBox());
     state.dispose();
   });
+  testWidgets('tab transitions never paint two screens together', (
+    tester,
+  ) async {
+    final state = await store();
+    for (final size in [const Size(360, 740), const Size(1440, 960)]) {
+      await tester.binding.setSurfaceSize(size);
+      await tester.pumpWidget(AcatrainApp(store: state));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Library').first);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 80));
+      expect(find.byKey(const ValueKey(0)), findsNothing);
+      expect(find.byKey(const ValueKey(1)), findsOneWidget);
+
+      await tester.tap(find.text('Review').first);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 80));
+      expect(find.byKey(const ValueKey(1)), findsNothing);
+      expect(find.byKey(const ValueKey(2)), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    }
+    await tester.binding.setSurfaceSize(null);
+    await tester.pumpWidget(const SizedBox());
+    state.dispose();
+  });
   testWidgets('launch animation plays, then reveals the home screen', (
     tester,
   ) async {

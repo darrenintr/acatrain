@@ -482,6 +482,13 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
                               context,
                               AcatrainSprings.spatialDefault,
                             ),
+                            // The full-screen pages have transparent areas.
+                            // Keeping the outgoing page in the switcher's
+                            // default stack makes both screens readable at
+                            // once during a cross-fade.
+                            layoutBuilder:
+                                (currentChild, previousChildren) =>
+                                    currentChild ?? const SizedBox.shrink(),
                             transitionBuilder: (child, animation) {
                               final slide = Tween<Offset>(
                                 begin: const Offset(0.025, 0),
@@ -2536,7 +2543,7 @@ class _LibraryList extends StatelessWidget {
           crossAxisCount: columns,
           mainAxisSpacing: 10,
           crossAxisSpacing: 10,
-          mainAxisExtent: 232,
+          mainAxisExtent: 252,
         ),
         itemCount: sets.length,
         shrinkWrap: true,
@@ -2545,6 +2552,7 @@ class _LibraryList extends StatelessWidget {
             (context, i) => _LibraryCard(
               set: sets[i],
               store: store,
+              grid: true,
               onTap: () => onOpen(sets[i]),
             ),
       );
@@ -2557,10 +2565,12 @@ class _LibraryCard extends StatelessWidget {
     required this.set,
     required this.store,
     required this.onTap,
+    this.grid = false,
   });
   final StudySet set;
   final AppStore store;
   final VoidCallback onTap;
+  final bool grid;
 
   @override
   Widget build(BuildContext context) {
@@ -2613,6 +2623,8 @@ class _LibraryCard extends StatelessWidget {
                   const SizedBox(height: 14),
                   Text(
                     set.title,
+                    maxLines: grid ? 2 : null,
+                    overflow: grid ? TextOverflow.ellipsis : null,
                     style: theme.textTheme.titleLarge?.copyWith(
                       fontSize: 22,
                       height: 28 / 22,
