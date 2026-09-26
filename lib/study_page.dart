@@ -64,7 +64,7 @@ class SetPage extends StatelessWidget {
           constraints: BoxConstraints(
             maxWidth: AcatrainLayout.maxContentWidth(context),
           ),
-          child: ListView(
+          child: FadingListView(
             padding: AcatrainLayout.pagePadding(context),
             children: [
               StudySetHero(
@@ -602,7 +602,7 @@ class _StudyPageState extends State<StudyPage> {
                   total: _items.length,
                 ),
                 Expanded(
-                  child: ListView(
+                  child: FadingListView(
                     padding: AcatrainLayout.pagePadding(context),
                     children: [
                       AnimatedSwitcher(

@@ -267,7 +267,7 @@ class _GamePageState extends State<GamePage> {
                   ),
                 ),
                 Expanded(
-                  child: ListView(
+                  child: FadingListView(
                     padding: AcatrainLayout.pagePadding(context),
                     children: [
                       if (_finished)

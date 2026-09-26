@@ -716,7 +716,7 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
 
   Widget _today(ThemeData theme) {
     final padding = AcatrainLayout.pagePadding(context);
-    return ListView(
+    return FadingListView(
       padding: padding,
       children: [
         const SizedBox(height: 4),
@@ -829,7 +829,7 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Expanded(
-                  child: SingleChildScrollView(
+                  child: FadingSingleChildScrollView(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -909,7 +909,7 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
         ..sort((a, b) => store.dueCount(b).compareTo(store.dueCount(a)));
     }
     final totalItems = sets.fold<int>(0, (n, s) => n + s.items.length);
-    return ListView(
+    return FadingListView(
       padding: AcatrainLayout.pagePadding(context),
       children: [
         if (expanded) _pageHeader(theme, tr(context, 'Library')),
@@ -1004,7 +1004,7 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
 
   Widget _review(ThemeData theme, {required bool expanded}) {
     final caughtUp = store.bundle.sets.every((s) => store.dueCount(s) == 0);
-    return ListView(
+    return FadingListView(
       padding: AcatrainLayout.pagePadding(context),
       children: [
         if (expanded) _pageHeader(theme, tr(context, 'Review, not relearn.')),
@@ -1121,7 +1121,7 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
     );
   }
 
-  Widget _settings(ThemeData theme, {required bool expanded}) => ListView(
+  Widget _settings(ThemeData theme, {required bool expanded}) => FadingListView(
     padding: AcatrainLayout.pagePadding(context),
     children: [
       if (expanded) _pageHeader(theme, tr(context, 'Your learning space')),

@@ -33,6 +33,83 @@ class AcatrainLayout {
       classOf(context) == AcatrainWindowClass.compact;
 }
 
+/// Softens the edge where scrolling content passes under a fixed header.
+/// The fade grows with the first few pixels of scrolling, so content is fully
+/// visible when the page is at the top.
+class ScrollTopFade extends StatefulWidget {
+  const ScrollTopFade({super.key, required this.builder});
+
+  final Widget Function(ScrollController controller) builder;
+
+  @override
+  State<ScrollTopFade> createState() => _ScrollTopFadeState();
+}
+
+class _ScrollTopFadeState extends State<ScrollTopFade> {
+  static const _fadeExtent = 32.0;
+  late final ScrollController _controller = ScrollController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AnimatedBuilder(
+    animation: _controller,
+    child: widget.builder(_controller),
+    builder: (context, child) {
+      final offset = _controller.hasClients ? _controller.offset : 0.0;
+      final strength = (offset / _fadeExtent).clamp(0.0, 1.0);
+      return ShaderMask(
+        blendMode: BlendMode.dstIn,
+        shaderCallback:
+            (bounds) => LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                Colors.white.withValues(alpha: 1 - strength),
+                Colors.white,
+              ],
+              stops: [0, (_fadeExtent / bounds.height).clamp(0.0, 1.0)],
+            ).createShader(bounds),
+        child: child,
+      );
+    },
+  );
+}
+
+class FadingListView extends StatelessWidget {
+  const FadingListView({super.key, required this.children, this.padding});
+
+  final List<Widget> children;
+  final EdgeInsetsGeometry? padding;
+
+  @override
+  Widget build(BuildContext context) => ScrollTopFade(
+    builder: (controller) => ListView(
+      controller: controller,
+      padding: padding,
+      children: children,
+    ),
+  );
+}
+
+class FadingSingleChildScrollView extends StatelessWidget {
+  const FadingSingleChildScrollView({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => ScrollTopFade(
+    builder: (controller) => SingleChildScrollView(
+      controller: controller,
+      child: child,
+    ),
+  );
+}
+
 const acatrainFastMotion = Duration(milliseconds: 180);
 const acatrainMediumMotion = Duration(milliseconds: 320);
 const acatrainHeroMotion = Duration(milliseconds: 420);
