@@ -1,0 +1,79 @@
+name: Publish Review Sets
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'assets/review/*.json'
+  workflow_dispatch:
+    inputs:
+      file:
+        description: Study-set JSON file to publish
+        required: true
+        default: assets/review/econ-micro-quiz-2026-09-28.json
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: acatrain-review-publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish via MCP
+    runs-on: ubuntu-latest
+    env:
+      ACATRAIN_API_URL: ${{ vars.ACATRAIN_API_URL }}
+      MCP_PUBLISH_TOKEN: ${{ secrets.MCP_PUBLISH_TOKEN }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Validate publisher configuration
+        run: |
+          set -eu
+          case "${ACATRAIN_API_URL:-}" in
+            https://*) ;;
+            *) echo "::error::ACATRAIN_API_URL must be configured as an HTTPS URL"; exit 1 ;;
+          esac
+          if [ ${#MCP_PUBLISH_TOKEN} -lt 32 ]; then
+            echo "::error::MCP_PUBLISH_TOKEN is missing or too short"
+            exit 1
+          fi
+
+      - name: Publish review set
+        env:
+          REVIEW_FILE: ${{ inputs.file }}
+        run: |
+          set -eu
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            file="$REVIEW_FILE"
+            case "$file" in
+              assets/review/*.json) ;;
+              *) echo "::error::file must be under assets/review and end in .json"; exit 1 ;;
+            esac
+            test -f "$file"
+            node tool/publish-study-set.mjs "$file"
+            exit 0
+          fi
+
+          files="$(git diff-tree --no-commit-id --name-only -r HEAD^ HEAD | grep '^assets/review/.*\.json$' || true)"
+          published=0
+          for file in $files; do
+            if [ -f "$file" ]; then
+              node tool/publish-study-set.mjs "$file"
+              published=1
+            fi
+          done
+          if [ "$published" -ne 1 ]; then
+            echo "::error::No review-set JSON file was added or changed"
+            exit 1
+          fi
