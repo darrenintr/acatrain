@@ -653,8 +653,24 @@ class _StudyPageState extends State<StudyPage> {
                             (currentChild, previousChildren) => Stack(
                               alignment: Alignment.topCenter,
                               children: [
-                                ...previousChildren,
-                                if (currentChild != null) currentChild,
+                                // Outgoing cards are on their way out:
+                                // never tappable or announced.
+                                // Same wrapper type for both so a child
+                                // keeps its element when it goes outgoing.
+                                for (final previous in previousChildren)
+                                  IgnorePointer(
+                                    key: previous.key,
+                                    child: ExcludeSemantics(child: previous),
+                                  ),
+                                if (currentChild != null)
+                                  IgnorePointer(
+                                    key: currentChild.key,
+                                    ignoring: false,
+                                    child: ExcludeSemantics(
+                                      excluding: false,
+                                      child: currentChild,
+                                    ),
+                                  ),
                               ],
                             ),
                         transitionBuilder: (child, animation) {
@@ -668,9 +684,13 @@ class _StudyPageState extends State<StudyPage> {
                             ),
                           );
                           return FadeTransition(
+                            // Incoming waits for the outgoing card to clear
+                            // (reverse runs 1→0, so the flipped curve drops
+                            // it out at the start) — no stacked overlap.
                             opacity: CurvedAnimation(
                               parent: animation,
-                              curve: _contentFadeCurve,
+                              curve: _contentFadeInCurve,
+                              reverseCurve: _contentFadeCurve.flipped,
                             ),
                             child: SlideTransition(
                               position: slide,
@@ -894,6 +914,10 @@ final _contentFadeCurve = AcatrainSpringCurve(
   AcatrainSprings.effectsDefault,
   span: AcatrainSprings.settle(AcatrainSprings.spatialDefault),
 );
+
+/// Fade-in for the incoming session content, held back until the outgoing
+/// content (faded out with [_contentFadeCurve] flipped) has mostly cleared.
+final _contentFadeInCurve = Interval(0.25, 1.0, curve: _contentFadeCurve);
 
 class _Flashcard extends StatelessWidget {
   const _Flashcard({
