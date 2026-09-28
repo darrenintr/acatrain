@@ -150,6 +150,12 @@ void main() {
     expect(store.releaseId, 'bundled-demo');
     store.dispose();
   });
+  test('production content API is configured by default', () async {
+    final store = AppStore(await SharedPreferences.getInstance());
+    expect(store.cloudConfigured, true);
+    expect(store.apiUrl, AppStore.productionApiUrl);
+    store.dispose();
+  });
   test('older cached content gains bundled English sets without losing its release', () async {
     final prefs = await SharedPreferences.getInstance();
     final original = jsonDecode(seed) as Map<String, dynamic>;

@@ -84,7 +84,7 @@ jobs:
             --dart-define=GOOGLE_DESKTOP_CLIENT_ID="$GOOGLE_DESKTOP_CLIENT_ID" \
             --dart-define=ACATRAIN_AUTH_CONTINUE_URL="$ACATRAIN_AUTH_CONTINUE_URL"
         env:
-          ACATRAIN_API_URL: ${{ vars.ACATRAIN_API_URL }}
+          ACATRAIN_API_URL: ${{ vars.ACATRAIN_API_URL || 'https://acatrain-api.darrenintr.workers.dev' }}
           FIREBASE_WEB_API_KEY: ${{ vars.FIREBASE_WEB_API_KEY }}
           FIREBASE_WEB_APP_ID: ${{ vars.FIREBASE_WEB_APP_ID }}
           FIREBASE_PROJECT_ID: ${{ vars.FIREBASE_PROJECT_ID }}
@@ -104,7 +104,7 @@ jobs:
           mkdir -p dist
           cp build/app/outputs/flutter-apk/app-release.apk "dist/acatrain-${ACATRAIN_VERSION}-android.apk"
         env:
-          ACATRAIN_API_URL: ${{ vars.ACATRAIN_API_URL }}
+          ACATRAIN_API_URL: ${{ vars.ACATRAIN_API_URL || 'https://acatrain-api.darrenintr.workers.dev' }}
           FIREBASE_WEB_API_KEY: ${{ vars.FIREBASE_WEB_API_KEY }}
           FIREBASE_WEB_APP_ID: ${{ vars.FIREBASE_WEB_APP_ID }}
           FIREBASE_PROJECT_ID: ${{ vars.FIREBASE_PROJECT_ID }}
@@ -155,7 +155,7 @@ jobs:
             --dart-define=GOOGLE_DESKTOP_CLIENT_ID="$GOOGLE_DESKTOP_CLIENT_ID" \
             --dart-define=ACATRAIN_AUTH_CONTINUE_URL="$ACATRAIN_AUTH_CONTINUE_URL"
         env:
-          ACATRAIN_API_URL: ${{ vars.ACATRAIN_API_URL }}
+          ACATRAIN_API_URL: ${{ vars.ACATRAIN_API_URL || 'https://acatrain-api.darrenintr.workers.dev' }}
           FIREBASE_WEB_API_KEY: ${{ vars.FIREBASE_WEB_API_KEY }}
           FIREBASE_WEB_APP_ID: ${{ vars.FIREBASE_WEB_APP_ID }}
           FIREBASE_PROJECT_ID: ${{ vars.FIREBASE_PROJECT_ID }}
@@ -210,7 +210,7 @@ jobs:
           CMAKE_POLICY_VERSION_MINIMUM: '3.5'
         run: >
           flutter build windows --release
-          --dart-define=ACATRAIN_API_URL="${{ vars.ACATRAIN_API_URL }}"
+          --dart-define=ACATRAIN_API_URL="${{ vars.ACATRAIN_API_URL || 'https://acatrain-api.darrenintr.workers.dev' }}"
           --dart-define=FIREBASE_WEB_API_KEY="${{ vars.FIREBASE_WEB_API_KEY }}"
           --dart-define=FIREBASE_WEB_APP_ID="${{ vars.FIREBASE_WEB_APP_ID }}"
           --dart-define=FIREBASE_PROJECT_ID="${{ vars.FIREBASE_PROJECT_ID }}"
@@ -244,7 +244,7 @@ jobs:
             --dart-define=GOOGLE_DESKTOP_CLIENT_ID="$GOOGLE_DESKTOP_CLIENT_ID" \
             --dart-define=ACATRAIN_AUTH_CONTINUE_URL="$ACATRAIN_AUTH_CONTINUE_URL"
         env:
-          ACATRAIN_API_URL: ${{ vars.ACATRAIN_API_URL }}
+          ACATRAIN_API_URL: ${{ vars.ACATRAIN_API_URL || 'https://acatrain-api.darrenintr.workers.dev' }}
           FIREBASE_WEB_API_KEY: ${{ vars.FIREBASE_WEB_API_KEY }}
           FIREBASE_WEB_APP_ID: ${{ vars.FIREBASE_WEB_APP_ID }}
           FIREBASE_PROJECT_ID: ${{ vars.FIREBASE_PROJECT_ID }}
@@ -284,7 +284,7 @@ jobs:
             --dart-define=GOOGLE_DESKTOP_CLIENT_ID="$GOOGLE_DESKTOP_CLIENT_ID" \
             --dart-define=ACATRAIN_AUTH_CONTINUE_URL="$ACATRAIN_AUTH_CONTINUE_URL"
         env:
-          ACATRAIN_API_URL: ${{ vars.ACATRAIN_API_URL }}
+          ACATRAIN_API_URL: ${{ vars.ACATRAIN_API_URL || 'https://acatrain-api.darrenintr.workers.dev' }}
           FIREBASE_WEB_API_KEY: ${{ vars.FIREBASE_WEB_API_KEY }}
           FIREBASE_WEB_APP_ID: ${{ vars.FIREBASE_WEB_APP_ID }}
           FIREBASE_PROJECT_ID: ${{ vars.FIREBASE_PROJECT_ID }}

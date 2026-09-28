@@ -16,17 +16,24 @@ import 'plan_icon.dart';
 enum ItemStatus { missed, due, practised, new_ }
 
 class AppStore extends ChangeNotifier {
+  static const productionApiUrl =
+      'https://acatrain-api.darrenintr.workers.dev';
+  static const _compiledApiUrl = String.fromEnvironment('ACATRAIN_API_URL');
+
   AppStore(
     this.prefs, {
     http.Client? client,
     FlutterSecureStorage? sessionStorage,
     this.googleTokenProvider,
-    this.apiUrl = const String.fromEnvironment('ACATRAIN_API_URL'),
+    String? apiUrl,
     this.firebaseKey = const String.fromEnvironment('FIREBASE_WEB_API_KEY'),
     this.authContinueUrl = const String.fromEnvironment(
       'ACATRAIN_AUTH_CONTINUE_URL',
     ),
-  }) : client = client ?? http.Client(),
+  }) : apiUrl =
+           apiUrl ??
+           (_compiledApiUrl.isEmpty ? productionApiUrl : _compiledApiUrl),
+       client = client ?? http.Client(),
        sessionStorage = sessionStorage ?? const FlutterSecureStorage() {
     Haptics.level = hapticLevel;
   }
