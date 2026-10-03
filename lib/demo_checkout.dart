@@ -1,11 +1,13 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:flutter/cupertino.dart' show CupertinoActivityIndicator;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'app_ui.dart';
+import 'biometry.dart';
 import 'language.dart';
 import 'subscription.dart';
 
@@ -75,6 +77,13 @@ Future<DemoCharge?> showDemoCheckout(
     builder: (_) => SingleChildScrollView(child: _MethodPicker(quote: quote)),
   );
   if (method == null || !context.mounted) return null;
+  // Face ID iPhones confirm with the side button; Touch ID iPads and
+  // iPhones confirm with the fingerprint sensor.
+  final device =
+      method == DemoPaymentMethod.appleIos
+          ? await DemoBiometrics.detect()
+          : DemoDevice.faceIdPhone;
+  if (!context.mounted) return null;
   final checkout = switch (method) {
     DemoPaymentMethod.googlePlay => showModalBottomSheet<DemoCharge>(
       context: context,
@@ -95,7 +104,7 @@ Future<DemoCharge?> showDemoCheckout(
       constraints: const BoxConstraints(maxWidth: 520),
       builder:
           (_) => SingleChildScrollView(
-            child: _AppleSheet(quote: quote, payer: payer),
+            child: _AppleSheet(quote: quote, payer: payer, device: device),
           ),
     ),
     DemoPaymentMethod.stripeWeb => showGeneralDialog<DemoCharge>(
@@ -797,9 +806,14 @@ class _GooglePlaySheetState extends State<_GooglePlaySheet>
 // ---------------------------------------------------------------------------
 
 class _AppleSheet extends StatefulWidget {
-  const _AppleSheet({required this.quote, required this.payer});
+  const _AppleSheet({
+    required this.quote,
+    required this.payer,
+    required this.device,
+  });
   final DemoQuote quote;
   final DemoPayer payer;
+  final DemoDevice device;
 
   @override
   State<_AppleSheet> createState() => _AppleSheetState();
@@ -808,21 +822,106 @@ class _AppleSheet extends StatefulWidget {
 class _AppleSheetState extends State<_AppleSheet>
     with _FakePayment, TickerProviderStateMixin {
   static const _blue = Color(0xFF0A84FF);
+  static const _touchRed = Color(0xFFFF375F);
 
   late final AnimationController _pulse = AnimationController(
     vsync: this,
     duration: const Duration(milliseconds: 1100),
   )..repeat(reverse: true);
 
+  /// How far the fingerprint has been read, 0 → 1, on Touch ID devices.
+  late final AnimationController _read = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 620),
+  );
+
+  /// Shakes the fingerprint when the sensor does not recognise the finger.
+  late final AnimationController _shake = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 420),
+  );
+
+  bool get _touchId => widget.device.touchId;
+
+  /// "Try Again" after a Touch ID miss, until the next touch.
+  bool _missed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Like the real sheet, the sensor is armed as soon as the sheet is up:
+    // the learner only has to touch it.
+    if (_touchId && widget.device.sensorReady) {
+      Future<void>.delayed(const Duration(milliseconds: 450), () {
+        if (mounted && stage == _PayStage.review) _useSensor();
+      });
+    }
+  }
+
   @override
   void dispose() {
     _pulse.dispose();
+    _read.dispose();
+    _shake.dispose();
     super.dispose();
   }
 
   @override
   DemoCharge charge() =>
       const DemoCharge(DemoPaymentMethod.appleIos, 'Apple Pay · Visa ·· 4242');
+
+  /// The on-screen fingerprint was touched: ask the real sensor when there
+  /// is one, otherwise let the touch stand in for it.
+  void _touchSensor() {
+    if (stage != _PayStage.review) return;
+    if (widget.device.sensorReady) {
+      _useSensor();
+    } else {
+      _readFinger();
+    }
+  }
+
+  Future<void> _useSensor() async {
+    setState(() {
+      stage = _PayStage.verify;
+      _missed = false;
+    });
+    final result = await DemoBiometrics.authenticate(
+      'Confirm your Acatrain ${widget.quote.plan.label} subscription',
+    );
+    if (!mounted) return;
+    switch (result) {
+      case DemoAuthResult.success:
+        await _readFinger();
+      case DemoAuthResult.unavailable:
+        // The sensor went away (locked out, finger removed from Settings):
+        // fall back to the on-screen stand-in.
+        setState(() => stage = _PayStage.review);
+      case DemoAuthResult.cancelled:
+        setState(() => stage = _PayStage.review);
+      case DemoAuthResult.failed:
+        unawaited(HapticFeedback.heavyImpact());
+        unawaited(_shake.forward(from: 0));
+        setState(() {
+          stage = _PayStage.review;
+          _missed = true;
+        });
+    }
+  }
+
+  /// Fills the fingerprint ridge by ridge, then pays.
+  Future<void> _readFinger() async {
+    setState(() {
+      stage = _PayStage.verify;
+      _missed = false;
+    });
+    unawaited(HapticFeedback.selectionClick());
+    _read.duration = demoMotion(context, 620);
+    await _read.forward(from: 0);
+    if (!mounted) return;
+    unawaited(HapticFeedback.lightImpact());
+    await pay(processingMs: 900);
+  }
 
   /// The App Store's closing "You're all set." alert. Drawn by hand, not
   /// with CupertinoAlertDialog, so it keeps the app's font on every platform.
@@ -1046,10 +1145,29 @@ class _AppleSheetState extends State<_AppleSheet>
                   ),
                   const SizedBox(height: 26),
                   ConstrainedBox(
-                    constraints: const BoxConstraints(minHeight: 132),
+                    constraints: const BoxConstraints(minHeight: 150),
                     child: AnimatedSwitcher(
-                      duration: demoMotion(context, 260),
+                      duration: demoMotion(context, 340),
+                      // A small overshoot as each step settles in.
+                      transitionBuilder:
+                          (child, animation) => FadeTransition(
+                            opacity: CurvedAnimation(
+                              parent: animation,
+                              curve: const Interval(0, 0.7),
+                            ),
+                            child: ScaleTransition(
+                              scale: Tween(begin: 0.86, end: 1.0).animate(
+                                CurvedAnimation(
+                                  parent: animation,
+                                  curve: Curves.easeOutBack,
+                                ),
+                              ),
+                              child: child,
+                            ),
+                          ),
                       child: switch (stage) {
+                        _PayStage.review || _PayStage.verify when _touchId =>
+                          _touchIdPad(ink, muted),
                         _PayStage.review || _PayStage.verify => Semantics(
                           key: const ValueKey('confirm'),
                           button: true,
@@ -1060,11 +1178,7 @@ class _AppleSheetState extends State<_AppleSheet>
                             child: Column(
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
-                                Icon(
-                                  Icons.phone_iphone_rounded,
-                                  size: 44,
-                                  color: ink,
-                                ),
+                                _SideButtonPhone(pulse: _pulse, color: ink),
                                 const SizedBox(height: 10),
                                 Text(
                                   'Confirm with Side Button',
@@ -1082,6 +1196,21 @@ class _AppleSheetState extends State<_AppleSheet>
                               ],
                             ),
                           ),
+                        ),
+                        _PayStage.processing when _touchId => Column(
+                          key: const ValueKey('processing'),
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const SizedBox(
+                              width: 64,
+                              height: 64,
+                              child: Center(
+                                child: CupertinoActivityIndicator(radius: 14),
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            Text('Processing', style: TextStyle(color: ink)),
+                          ],
                         ),
                         _PayStage.processing => Column(
                           key: const ValueKey('faceid'),
@@ -1119,7 +1248,7 @@ class _AppleSheetState extends State<_AppleSheet>
           ),
           // The glowing side-button cue and its "Double Click to Pay" label
           // on the sheet's right edge, where the real button sits.
-          if (stage == _PayStage.review)
+          if (stage == _PayStage.review && !_touchId)
             Positioned(
               right: 0,
               top: 66,
@@ -1174,6 +1303,77 @@ class _AppleSheetState extends State<_AppleSheet>
     );
   }
 
+  /// "Pay with Touch ID": the fingerprint stands in for the sensor, or
+  /// mirrors the real one while it reads.
+  Widget _touchIdPad(Color ink, Color muted) {
+    final device = widget.device;
+    final reading = stage == _PayStage.verify;
+    final hint =
+        device.sensorReady
+            ? device.sensorHint
+            : 'Touch the fingerprint to stand in for the sensor';
+    return Semantics(
+      key: const ValueKey('touchid'),
+      button: true,
+      label: 'Pay with Touch ID. $hint',
+      child: GestureDetector(
+        onTapDown: (_) => _touchSensor(),
+        behavior: HitTestBehavior.opaque,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            AnimatedBuilder(
+              animation: Listenable.merge([_pulse, _read, _shake]),
+              builder:
+                  (context, _) => Transform.translate(
+                    offset: Offset(
+                      10 *
+                          math.sin(_shake.value * math.pi * 5) *
+                          (1 - _shake.value),
+                      0,
+                    ),
+                    child: CustomPaint(
+                      size: const Size.square(76),
+                      painter: _FingerprintPainter(
+                        read: _read.value,
+                        pulse: reading ? 1 : _pulse.value,
+                        idle: muted,
+                        accent: _touchRed,
+                        missed: _missed,
+                      ),
+                    ),
+                  ),
+            ),
+            const SizedBox(height: 10),
+            AnimatedSwitcher(
+              duration: demoMotion(context, 200),
+              child: Text(
+                _missed ? 'Try Again' : 'Pay with Touch ID',
+                key: ValueKey(_missed),
+                style: TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w600,
+                  color: _missed ? _touchRed : ink,
+                ),
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              hint,
+              textAlign: TextAlign.center,
+              style: TextStyle(color: muted, fontSize: 13),
+            ),
+            if (device.sensorReady && device.isTablet && !device.homeButton)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: _TopButtonCue(pulse: _pulse, color: _blue),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _appleRow(String label, String value, Color muted) => Padding(
     padding: const EdgeInsets.symmetric(vertical: 5),
     child: Row(
@@ -1189,7 +1389,209 @@ class _AppleSheetState extends State<_AppleSheet>
   );
 }
 
-/// A pulsing face glyph with a scanning line, in the spirit of Face ID.
+/// A phone outline whose side button glows twice per pulse, hinting at the
+/// double click.
+class _SideButtonPhone extends StatelessWidget {
+  const _SideButtonPhone({required this.pulse, required this.color});
+  final Animation<double> pulse;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) => AnimatedBuilder(
+    animation: pulse,
+    builder:
+        (context, _) => CustomPaint(
+          size: const Size(44, 56),
+          painter: _SideButtonPainter(pulse.value, color),
+        ),
+  );
+}
+
+class _SideButtonPainter extends CustomPainter {
+  _SideButtonPainter(this.t, this.color);
+  final double t;
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final body = RRect.fromRectAndRadius(
+      Rect.fromLTWH(4, 2, size.width - 12, size.height - 4),
+      const Radius.circular(7),
+    );
+    canvas.drawRRect(
+      body,
+      Paint()
+        ..color = color
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2.4,
+    );
+    // Dynamic Island.
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromCenter(
+          center: Offset(body.center.dx, body.top + 6),
+          width: 10,
+          height: 3,
+        ),
+        const Radius.circular(2),
+      ),
+      Paint()..color = color,
+    );
+    // Two quick glows per pulse: click, click.
+    final glow = math.max(0.0, math.sin(t * math.pi * 2)).toDouble();
+    final button = Rect.fromLTWH(body.right + 2, body.top + 12, 3.5, 13);
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        button.inflate(3 * glow),
+        const Radius.circular(3),
+      ),
+      Paint()
+        ..color = const Color(0xFF0A84FF).withValues(alpha: 0.35 * glow)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4),
+    );
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(button, const Radius.circular(2)),
+      Paint()
+        ..color = Color.lerp(color, const Color(0xFF0A84FF), 0.3 + 0.7 * glow)!,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_SideButtonPainter old) =>
+      old.t != t || old.color != color;
+}
+
+/// "Touch ID ↑ top button": points at the sensor on iPads without a Home
+/// button.
+class _TopButtonCue extends StatelessWidget {
+  const _TopButtonCue({required this.pulse, required this.color});
+  final Animation<double> pulse;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) => AnimatedBuilder(
+    animation: pulse,
+    builder:
+        (context, child) => Transform.translate(
+          offset: Offset(0, -4 * Curves.easeInOut.transform(pulse.value)),
+          child: child,
+        ),
+    child: Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.arrow_upward_rounded, size: 14, color: color),
+          const SizedBox(width: 4),
+          Flexible(
+            child: Text(
+              'Touch ID is in the top button',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: color,
+              ),
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+/// A Touch ID fingerprint. Ridges light up from the core outwards as [read]
+/// goes 0 → 1, with a ripple running ahead of them; while idle it breathes
+/// with [pulse].
+class _FingerprintPainter extends CustomPainter {
+  _FingerprintPainter({
+    required this.read,
+    required this.pulse,
+    required this.idle,
+    required this.accent,
+    required this.missed,
+  });
+  final double read;
+  final double pulse;
+  final Color idle;
+  final Color accent;
+  final bool missed;
+
+  /// Each ridge: radius (fraction of width), start angle, sweep. Uneven
+  /// starts and gaps make it read as a fingerprint, not a target.
+  static const _ridges = <(double, double, double)>[
+    (0.07, -math.pi * 0.95, math.pi * 1.25),
+    (0.13, -math.pi * 1.05, math.pi * 1.45),
+    (0.19, -math.pi * 1.1, math.pi * 0.62),
+    (0.19, -math.pi * 0.38, math.pi * 0.78),
+    (0.25, -math.pi * 1.12, math.pi * 1.6),
+    (0.31, -math.pi * 1.0, math.pi * 0.7),
+    (0.31, -math.pi * 0.22, math.pi * 0.62),
+    (0.37, -math.pi * 0.95, math.pi * 1.2),
+    (0.43, -math.pi * 0.86, math.pi * 0.72),
+  ];
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final w = size.width;
+    final center = Offset(w / 2, w * 0.54);
+    final base = missed ? accent : idle;
+    // Soft halo that breathes while waiting and blooms while reading.
+    canvas.drawCircle(
+      Offset(w / 2, w / 2),
+      w * (0.46 + 0.04 * pulse),
+      Paint()
+        ..color = accent.withValues(alpha: 0.05 + 0.07 * pulse + 0.1 * read),
+    );
+    // Ripple running ahead of the fill.
+    if (read > 0 && read < 1) {
+      canvas.drawCircle(
+        center,
+        w * (0.05 + 0.5 * read),
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 2
+          ..color = accent.withValues(alpha: 0.4 * (1 - read)),
+      );
+    }
+    final stroke =
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeCap = StrokeCap.round
+          ..strokeWidth = w * 0.042;
+    final n = _ridges.length;
+    for (var i = 0; i < n; i++) {
+      final (r, start, sweep) = _ridges[i];
+      final rect = Rect.fromCenter(
+        center: center,
+        width: w * r * 2,
+        height: w * r * 2.25,
+      );
+      stroke.color = base.withValues(alpha: missed ? 0.9 : 0.45 + 0.35 * pulse);
+      canvas.drawArc(rect, start, sweep, false, stroke);
+      // How much of this ridge the reading has reached.
+      final local = ((read * (n + 2) - i) / 3).clamp(0.0, 1.0);
+      if (local > 0) {
+        stroke.color = accent;
+        canvas.drawArc(rect, start, sweep * local, false, stroke);
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(_FingerprintPainter old) =>
+      old.read != read ||
+      old.pulse != pulse ||
+      old.missed != missed ||
+      old.idle != idle ||
+      old.accent != accent;
+}
+
+/// The Face ID glyph while it looks: the corner brackets breathe, the face
+/// turns slightly as if the head moves, and a glowing band sweeps over it.
 class _FaceScan extends StatefulWidget {
   const _FaceScan({required this.color});
   final Color color;
@@ -1202,7 +1604,7 @@ class _FaceScanState extends State<_FaceScan>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller = AnimationController(
     vsync: this,
-    duration: const Duration(milliseconds: 900),
+    duration: const Duration(milliseconds: 1400),
   )..repeat();
 
   @override
@@ -1230,36 +1632,43 @@ class _FacePainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final w = size.width;
+    final wave = math.sin(t * math.pi * 2);
     final paint =
         Paint()
           ..color = color
           ..style = PaintingStyle.stroke
           ..strokeWidth = 3.2
-          ..strokeCap = StrokeCap.round;
-    // Corner brackets.
-    const c = 14.0;
+          ..strokeCap = StrokeCap.round
+          ..strokeJoin = StrokeJoin.round;
+    // Corner brackets that breathe in and out.
+    final inset = 2 + 2 * wave;
+    final c = 14.0 - wave;
     for (final (x, y, dx, dy) in [
-      (0.0, 0.0, 1.0, 1.0),
-      (w, 0.0, -1.0, 1.0),
-      (0.0, w, 1.0, -1.0),
-      (w, w, -1.0, -1.0),
+      (inset, inset, 1.0, 1.0),
+      (w - inset, inset, -1.0, 1.0),
+      (inset, w - inset, 1.0, -1.0),
+      (w - inset, w - inset, -1.0, -1.0),
     ]) {
       canvas.drawPath(
         Path()
           ..moveTo(x, y + dy * c)
-          ..lineTo(x, y)
+          ..lineTo(x, y + dy * 4)
+          ..quadraticBezierTo(x, y, x + dx * 4, y)
           ..lineTo(x + dx * c, y),
         paint,
       );
     }
-    // Eyes, nose and smile.
+    // Eyes, nose and smile, shifted as if the head turns a little.
+    final turn = w * 0.035 * wave;
+    canvas.save();
+    canvas.translate(turn, 0);
     canvas.drawLine(Offset(w * .36, w * .36), Offset(w * .36, w * .44), paint);
     canvas.drawLine(Offset(w * .64, w * .36), Offset(w * .64, w * .44), paint);
     canvas.drawPath(
       Path()
-        ..moveTo(w * .52, w * .36)
-        ..lineTo(w * .52, w * .56)
-        ..lineTo(w * .47, w * .56),
+        ..moveTo(w * .52 + turn * 0.4, w * .36)
+        ..lineTo(w * .52 + turn * 0.4, w * .56)
+        ..lineTo(w * .47 + turn * 0.4, w * .56),
       paint,
     );
     canvas.drawArc(
@@ -1273,14 +1682,30 @@ class _FacePainter extends CustomPainter {
       false,
       paint,
     );
-    // Scan line.
-    final y = w * (0.12 + 0.76 * (0.5 - 0.5 * math.cos(t * math.pi * 2)));
-    canvas.drawLine(
-      Offset(w * .1, y),
-      Offset(w * .9, y),
+    canvas.restore();
+    // A soft band of light sweeping down, then back up.
+    final y = w * (0.1 + 0.8 * (0.5 - 0.5 * math.cos(t * math.pi * 2)));
+    final band = Rect.fromLTRB(w * .08, y - w * .14, w * .92, y + w * .14);
+    canvas.drawRect(
+      band,
       Paint()
-        ..color = color.withValues(alpha: 0.55)
-        ..strokeWidth = 2,
+        ..shader = LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            color.withValues(alpha: 0),
+            color.withValues(alpha: 0.28),
+            color.withValues(alpha: 0),
+          ],
+        ).createShader(band),
+    );
+    canvas.drawLine(
+      Offset(w * .12, y),
+      Offset(w * .88, y),
+      Paint()
+        ..color = color.withValues(alpha: 0.7)
+        ..strokeWidth = 1.6
+        ..strokeCap = StrokeCap.round,
     );
   }
 

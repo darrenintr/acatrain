@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:acatrain/biometry.dart';
 import 'package:acatrain/demo_checkout.dart';
 import 'package:acatrain/main.dart';
 import 'package:acatrain/store.dart';
@@ -15,8 +16,10 @@ void main() {
   setUp(() {
     FlutterSecureStorage.setMockInitialValues({});
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(const MethodChannel('acatrain/icon'),
-            (call) async => null);
+        .setMockMethodCallHandler(
+          const MethodChannel('acatrain/icon'),
+          (call) async => null,
+        );
   });
   Future<AppStore> store() async {
     SharedPreferences.setMockInitialValues({});
@@ -215,6 +218,35 @@ void main() {
       state.dispose();
     });
 
+    testWidgets('App Store checkout on a Touch ID iPad pays with a touch at '
+        '${size.width}', (tester) async {
+      DemoBiometrics.debugDevice = const DemoDevice(
+        biometry: DemoBiometry.touchId,
+        isTablet: true,
+      );
+      addTearDown(() => DemoBiometrics.debugDevice = null);
+      final state = await store();
+      await tester.binding.setSurfaceSize(size);
+      await openCheckout(
+        tester,
+        state,
+        r'Subscribe · $10.00',
+        'App Store (iOS)',
+      );
+      expect(find.text('Confirm with Side Button'), findsNothing);
+      expect(find.text('Double Click\nto Pay'), findsNothing);
+      await tester.tap(find.text('Pay with Touch ID'));
+      await wait(tester, 3600);
+      expect(find.text("You're all set."), findsOneWidget);
+      await tester.tap(find.text('OK'));
+      await wait(tester, 800);
+      expect(state.plan, 'pro');
+      expect(tester.takeException(), isNull);
+      await tester.binding.setSurfaceSize(null);
+      await tester.pumpWidget(const SizedBox());
+      state.dispose();
+    });
+
     testWidgets('Stripe checkout validates and accepts a test card at '
         '${size.width}', (tester) async {
       final state = await store();
@@ -349,6 +381,48 @@ void main() {
     final context = tester.element(find.byType(Scaffold).first);
     expect(Theme.of(context).colorScheme.primary, const Color(0xFF1B1812));
     expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+    state.dispose();
+  });
+
+  testWidgets('Touch ID sensor arms itself and retries after a miss', (
+    tester,
+  ) async {
+    DemoBiometrics.debugDevice = const DemoDevice(
+      biometry: DemoBiometry.touchId,
+      isTablet: true,
+      sensorReady: true,
+    );
+    final results = ['failed', 'success'];
+    final calls = <MethodCall>[];
+    const channel = MethodChannel('acatrain/biometry');
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(channel, (call) async {
+      calls.add(call);
+      return results.removeAt(0);
+    });
+    addTearDown(() {
+      DemoBiometrics.debugDevice = null;
+      messenger.setMockMethodCallHandler(channel, null);
+    });
+    final state = await store();
+    await tester.binding.setSurfaceSize(const Size(1024, 1366));
+    await openCheckout(tester, state, r'Subscribe · $10.00', 'App Store (iOS)');
+    // The sensor was asked without any tap, and the miss is shown.
+    expect(calls.single.method, 'authenticate');
+    expect(find.text('Try Again'), findsOneWidget);
+    expect(find.text('Touch ID is in the top button'), findsOneWidget);
+    expect(state.plan, 'free');
+    await tester.tap(find.text('Try Again'));
+    await wait(tester, 3600);
+    expect(calls, hasLength(2));
+    expect(find.text("You're all set."), findsOneWidget);
+    await tester.tap(find.text('OK'));
+    await wait(tester, 800);
+    expect(state.plan, 'pro');
+    expect(tester.takeException(), isNull);
+    await tester.binding.setSurfaceSize(null);
     await tester.pumpWidget(const SizedBox());
     state.dispose();
   });

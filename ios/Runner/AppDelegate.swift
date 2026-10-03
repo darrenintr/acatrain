@@ -1,5 +1,6 @@
 import CoreHaptics
 import Flutter
+import LocalAuthentication
 import UIKit
 
 @main
@@ -18,6 +19,9 @@ import UIKit
     let hapticsRegistrar = engineBridge.pluginRegistry.registrar(forPlugin: "AcatrainHaptics")
     FlutterMethodChannel(name: "acatrain/haptics", binaryMessenger: hapticsRegistrar!.messenger())
       .setMethodCallHandler(haptics.handle)
+    let biometryRegistrar = engineBridge.pluginRegistry.registrar(forPlugin: "AcatrainBiometry")
+    FlutterMethodChannel(name: "acatrain/biometry", binaryMessenger: biometryRegistrar!.messenger())
+      .setMethodCallHandler(AcatrainBiometry.handle)
     let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "AcatrainPlanIcon")
     let channel = FlutterMethodChannel(
       name: "acatrain/icon", binaryMessenger: registrar!.messenger())
@@ -54,6 +58,69 @@ import UIKit
         }
       }
     }
+  }
+}
+
+/// Tells the demo checkout whether this device has Face ID or Touch ID, and
+/// on Touch ID devices asks the sensor to confirm the pretend purchase.
+enum AcatrainBiometry {
+  static func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+    switch call.method {
+    case "capabilities":
+      DispatchQueue.main.async { result(capabilities()) }
+    case "authenticate":
+      let reason = (call.arguments as? [String: Any])?["reason"] as? String ?? "Confirm your purchase"
+      let context = LAContext()
+      // No "Enter Password" button: the sheet offers its own retry.
+      context.localizedFallbackTitle = ""
+      var error: NSError?
+      guard context.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &error),
+            context.biometryType == .touchID else {
+        result(FlutterError(
+          code: "UNAVAILABLE", message: error?.localizedDescription ?? "Touch ID unavailable",
+          details: nil))
+        return
+      }
+      context.evaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, localizedReason: reason) {
+        success, error in
+        DispatchQueue.main.async {
+          if success {
+            result("success")
+            return
+          }
+          switch (error as? LAError)?.code {
+          case .userCancel?, .systemCancel?, .appCancel?, .userFallback?: result("cancelled")
+          default: result("failed")
+          }
+        }
+      }
+    default:
+      result(FlutterMethodNotImplemented)
+    }
+  }
+
+  private static func capabilities() -> [String: Any] {
+    let context = LAContext()
+    var error: NSError?
+    let enrolled = context.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: &error)
+    // biometryType is filled in by canEvaluatePolicy, even when no finger is enrolled.
+    let biometry: String
+    switch context.biometryType {
+    case .touchID: biometry = "touchID"
+    case .faceID: biometry = "faceID"
+    default: biometry = "none"
+    }
+    let window = UIApplication.shared.connectedScenes
+      .compactMap { $0 as? UIWindowScene }
+      .flatMap { $0.windows }
+      .first { $0.isKeyWindow }
+    return [
+      "biometry": biometry,
+      "enrolled": enrolled,
+      "pad": UIDevice.current.userInterfaceIdiom == .pad,
+      // Devices with a Home button have no bottom safe-area inset.
+      "homeButton": (window?.safeAreaInsets.bottom ?? 0) == 0,
+    ]
   }
 }
 
