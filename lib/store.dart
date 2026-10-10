@@ -262,7 +262,8 @@ class AppStore extends ChangeNotifier {
         (provider) => provider is Map && provider['providerId'] == 'google.com',
       );
     }
-    displayName = data['displayName']?.toString();
+    displayName = data['displayName']?.toString() ??
+        (sameUser ? displayName : null);
     _idToken = nextIdToken;
     _refreshToken = nextRefreshToken;
     final seconds = int.tryParse(data['expiresIn']?.toString() ?? '') ?? 3600;
@@ -578,6 +579,11 @@ class AppStore extends ChangeNotifier {
     String password, {
     bool register = false,
   }) => _run(() async {
+    if (register && (password.length < 8 || password.length > 128)) {
+      throw const FormatException(
+        'Use a password between 8 and 128 characters.',
+      );
+    }
     final action = register ? 'signUp' : 'signInWithPassword';
     final response = await _firebasePost(action, {
       'email': address.trim(),
@@ -880,7 +886,9 @@ class AppStore extends ChangeNotifier {
 
     var localCleanupFailed = false;
     try {
-      await prefs.remove('progress:$accountUid');
+      if (!await prefs.remove('progress:$accountUid')) {
+        localCleanupFailed = true;
+      }
     } catch (_) {
       localCleanupFailed = true;
     }
