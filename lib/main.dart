@@ -7,6 +7,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_displaymode/flutter_displaymode.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'account_page.dart';
 import 'app_ui.dart';
 import 'expressive.dart';
 import 'models.dart';
@@ -1473,76 +1474,12 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
       await _login();
       return;
     }
-    final controller = TextEditingController(text: store.displayName ?? '');
-    await showDialog<void>(
-      context: context,
-      builder:
-          (dialogContext) => AlertDialog(
-            title: Text(tr(dialogContext, 'Personal info')),
-            content: SizedBox(
-              width: 380,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  TextField(
-                    controller: controller,
-                    maxLength: 80,
-                    decoration: InputDecoration(
-                      labelText: tr(dialogContext, 'Name'),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text('${tr(dialogContext, 'Email')}: ${store.email ?? ''}'),
-                  const SizedBox(height: 12),
-                  OutlinedButton.icon(
-                    onPressed:
-                        store.busy
-                            ? null
-                            : () async {
-                              final ok = await store.signInWithGoogle();
-                              if (dialogContext.mounted) {
-                                ScaffoldMessenger.of(
-                                  dialogContext,
-                                ).showSnackBar(
-                                  SnackBar(
-                                    content: Text(
-                                      tr(dialogContext, store.status),
-                                    ),
-                                  ),
-                                );
-                                if (ok) Navigator.pop(dialogContext);
-                              }
-                            },
-                    icon: const Icon(Icons.account_circle_outlined),
-                    label: Text(tr(dialogContext, 'Connect Google')),
-                  ),
-                ],
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(dialogContext),
-                child: Text(
-                  MaterialLocalizations.of(dialogContext).cancelButtonLabel,
-                ),
-              ),
-              FilledButton(
-                onPressed: () async {
-                  final ok = await store.updateDisplayName(controller.text);
-                  if (dialogContext.mounted) {
-                    ScaffoldMessenger.of(dialogContext).showSnackBar(
-                      SnackBar(content: Text(tr(dialogContext, store.status))),
-                    );
-                    if (ok) Navigator.pop(dialogContext);
-                  }
-                },
-                child: Text(tr(dialogContext, 'Save')),
-              ),
-            ],
-          ),
+    if (!mounted) return;
+    await Navigator.of(context).push(
+      AcatrainPageRoute<void>(
+        builder: (_) => AccountPage(store: store),
+      ),
     );
-    controller.dispose();
   }
 
   Future<void> _login() async {
@@ -3479,10 +3416,12 @@ class _AuthSheet extends StatefulWidget {
 class _AuthSheetState extends State<_AuthSheet> {
   final _email = TextEditingController();
   final _password = TextEditingController();
+  final _confirmation = TextEditingController();
   final _emailLink = TextEditingController();
   bool _creating = false;
   bool _submitting = false;
   bool _passwordless = false;
+  bool _passwordVisible = false;
   bool _linkSent = false;
   String? _error;
   String? _notice;
@@ -3491,6 +3430,7 @@ class _AuthSheetState extends State<_AuthSheet> {
   void dispose() {
     _email.dispose();
     _password.dispose();
+    _confirmation.dispose();
     _emailLink.dispose();
     super.dispose();
   }
@@ -3529,10 +3469,16 @@ class _AuthSheetState extends State<_AuthSheet> {
     });
   }
 
-  Future<void> _submitPassword() => _run(
-    () => widget.store.signIn(_email.text, _password.text, register: _creating),
-    close: true,
-  );
+  Future<void> _submitPassword() async {
+    if (_creating && _password.text != _confirmation.text) {
+      setState(() => _error = 'Passwords do not match.');
+      return;
+    }
+    await _run(
+      () => widget.store.signIn(_email.text, _password.text, register: _creating),
+      close: true,
+    );
+  }
 
   Future<void> _sendLink() => _run(() async {
     final ok = await widget.store.sendEmailSignInLink(_email.text);
@@ -3665,7 +3611,7 @@ class _AuthSheetState extends State<_AuthSheet> {
                         TextField(
                           controller: _password,
                           enabled: !_submitting,
-                          obscureText: true,
+                          obscureText: !_passwordVisible,
                           enableSuggestions: false,
                           autocorrect: false,
                           autofillHints:
@@ -3675,8 +3621,32 @@ class _AuthSheetState extends State<_AuthSheet> {
                           decoration: InputDecoration(
                             labelText: tr(context, 'Password'),
                             prefixIcon: const Icon(Icons.lock_outline_rounded),
+                            suffixIcon: IconButton(
+                              onPressed: () => setState(
+                                () => _passwordVisible = !_passwordVisible),
+                              tooltip: tr(context, _passwordVisible
+                                  ? 'Hide password' : 'Show password'),
+                              icon: Icon(_passwordVisible
+                                  ? Icons.visibility_off_outlined
+                                  : Icons.visibility_outlined),
+                            ),
                           ),
                         ),
+                        if (_creating) ...[
+                          const SizedBox(height: 12),
+                          TextField(
+                            controller: _confirmation,
+                            enabled: !_submitting,
+                            obscureText: !_passwordVisible,
+                            autocorrect: false,
+                            enableSuggestions: false,
+                            autofillHints: const [AutofillHints.newPassword],
+                            decoration: InputDecoration(
+                              labelText: tr(context, 'Confirm password'),
+                              prefixIcon: const Icon(Icons.lock_reset_rounded),
+                            ),
+                          ),
+                        ],
                         const SizedBox(height: 12),
                         FilledButton(
                           onPressed: _submitting ? null : _submitPassword,

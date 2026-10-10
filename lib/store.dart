@@ -58,6 +58,8 @@ class AppStore extends ChangeNotifier {
   /// the learner that new study content is ready.
   final contentReleases = ValueNotifier<int>(0);
   String? uid, email, displayName, _idToken, _refreshToken;
+  bool? emailVerified;
+  bool googleConnected = false;
   String? _pendingGoogleToken, _pendingGoogleEmail;
   DateTime? _expiresAt;
   DateTime? lastContentSync;
@@ -219,7 +221,11 @@ class AppStore extends ChangeNotifier {
       'INVALID_PASSWORD' ||
       'INVALID_LOGIN_CREDENTIALS' => 'The email or password is incorrect.',
       'WEAK_PASSWORD' =>
-        'Choose a stronger password with at least 6 characters.',
+        'Choose a stronger password with at least 8 characters.',
+      'INVALID_ID_TOKEN' || 'TOKEN_EXPIRED' || 'USER_NOT_FOUND' =>
+        'Your session is no longer valid. Sign in again.',
+      'CREDENTIAL_TOO_OLD_LOGIN_AGAIN' =>
+        'For security, sign out and sign in again before changing your account.',
       'OPERATION_NOT_ALLOWED' =>
         'This sign-in method is not enabled in Firebase Authentication.',
       'TOO_MANY_ATTEMPTS_TRY_LATER' => 'Too many attempts. Try again later.',
@@ -234,14 +240,30 @@ class AppStore extends ChangeNotifier {
     final nextUid = data['localId']?.toString();
     final nextIdToken = data['idToken']?.toString();
     final nextRefreshToken = data['refreshToken']?.toString();
-    if (nextUid == null || nextIdToken == null || nextRefreshToken == null) {
+    if (nextUid == null || nextUid.isEmpty ||
+        nextIdToken == null || nextIdToken.isEmpty ||
+        nextRefreshToken == null || nextRefreshToken.isEmpty) {
       throw const FormatException(
         'The authentication response was incomplete.',
       );
     }
+    final sameUser = uid == nextUid;
+    if (!sameUser) {
+      emailVerified = null;
+      googleConnected = false;
+    }
     uid = nextUid;
     email = data['email']?.toString() ?? fallbackEmail;
-    displayName = data['displayName']?.toString();
+    if (data['emailVerified'] is bool) {
+      emailVerified = data['emailVerified'] as bool;
+    }
+    if (data['providerUserInfo'] is List) {
+      googleConnected = (data['providerUserInfo'] as List).any(
+        (provider) => provider is Map && provider['providerId'] == 'google.com',
+      );
+    }
+    displayName = data['displayName']?.toString() ??
+        (sameUser ? displayName : null);
     _idToken = nextIdToken;
     _refreshToken = nextRefreshToken;
     final seconds = int.tryParse(data['expiresIn']?.toString() ?? '') ?? 3600;
@@ -253,6 +275,7 @@ class AppStore extends ChangeNotifier {
   Future<void> _saveSession() async {
     await sessionStorage.write(key: _sessionKey, value: jsonEncode({
       'uid': uid, 'email': email, 'displayName': displayName,
+      'emailVerified': emailVerified, 'googleConnected': googleConnected,
       'idToken': _idToken, 'refreshToken': _refreshToken,
       'expiresAt': _expiresAt?.toUtc().toIso8601String(),
     }));
@@ -266,12 +289,14 @@ class AppStore extends ChangeNotifier {
       final restoredUid = data['uid'] as String?;
       final refresh = data['refreshToken'] as String?;
       if (restoredUid == null || restoredUid.isEmpty || refresh == null || refresh.isEmpty) {
-        await sessionStorage.delete(key: _sessionKey);
+        await _clearSession();
         return;
       }
       uid = restoredUid;
       email = data['email'] as String?;
       displayName = data['displayName'] as String?;
+      emailVerified = data['emailVerified'] as bool?;
+      googleConnected = data['googleConnected'] == true;
       _idToken = data['idToken'] as String?;
       _refreshToken = refresh;
       _expiresAt = DateTime.tryParse(data['expiresAt']?.toString() ?? '');
@@ -289,19 +314,29 @@ class AppStore extends ChangeNotifier {
         }
       }
     } catch (_) {
-      // A damaged or unavailable secure store must not prevent offline use.
+      // Never retain a partially restored identity in memory. A broken
+      // secure store must not expose a previous user's local progress.
+      _resetLocalSession();
       status = 'Could not restore the saved account.';
     }
   }
 
-  Future<void> _clearSession() async {
+  void _resetLocalSession() {
     uid = null;
     email = null;
     displayName = null;
     _idToken = null;
     _refreshToken = null;
     _expiresAt = null;
+    emailVerified = null;
+    googleConnected = false;
+    _pendingGoogleToken = null;
+    _pendingGoogleEmail = null;
     _loadProgress();
+  }
+
+  Future<void> _clearSession() async {
+    _resetLocalSession();
     await sessionStorage.delete(key: _sessionKey);
   }
 
@@ -544,6 +579,11 @@ class AppStore extends ChangeNotifier {
     String password, {
     bool register = false,
   }) => _run(() async {
+    if (register && (password.length < 8 || password.length > 128)) {
+      throw const FormatException(
+        'Use a password between 8 and 128 characters.',
+      );
+    }
     final action = register ? 'signUp' : 'signInWithPassword';
     final response = await _firebasePost(action, {
       'email': address.trim(),
@@ -573,6 +613,21 @@ class AppStore extends ChangeNotifier {
       _pendingGoogleEmail = null;
     }
     await _applySession(data, fallbackEmail: address.trim());
+    if (register) {
+      emailVerified = false;
+      try {
+        final verification = await _firebasePost('sendOobCode', {
+          'requestType': 'VERIFY_EMAIL',
+          'idToken': await _token(),
+        });
+        status = verification.statusCode == 200
+            ? 'Account created. Check your inbox to verify your email.'
+            : 'Account created. Send a verification email from Personal info.';
+      } catch (_) {
+        status = 'Account created. Send a verification email from Personal info.';
+      }
+      await _saveSession();
+    }
     if (!register) {
       try {
         await prepareGoogleIdentityPassword(address.trim(), password);
@@ -581,8 +636,9 @@ class AppStore extends ChangeNotifier {
         // the user chooses to connect Google.
       }
     }
-    status =
-        'Signed in. Use Sync progress to merge this account across devices.';
+    if (!register) {
+      status = 'Signed in. Use Sync progress to merge this account across devices.';
+    }
   });
 
   Future<Map<String, dynamic>> _exchangeGoogle(
@@ -648,6 +704,8 @@ class AppStore extends ChangeNotifier {
         );
       }
       await _applySession(data, fallbackEmail: email);
+      googleConnected = true;
+      await _saveSession();
       status =
           'Google is connected to your account. Your progress stays with this account.';
       return;
@@ -662,6 +720,8 @@ class AppStore extends ChangeNotifier {
         );
       }
       await _applySession(data);
+      googleConnected = true;
+      await _saveSession();
       status =
           'Signed in with Google. Use Sync progress to merge progress across devices.';
     } on FormatException catch (error) {
@@ -672,6 +732,73 @@ class AppStore extends ChangeNotifier {
       }
       rethrow;
     }
+  });
+
+  Future<void> _rotateSessionTokens(Map<String, dynamic> data) async {
+    if (uid == null || data['localId'] != uid) {
+      throw const FormatException('Account identity changed. Sign in again.');
+    }
+    final nextId = data['idToken'];
+    final nextRefresh = data['refreshToken'];
+    if (nextId is! String || nextId.isEmpty ||
+        nextRefresh is! String || nextRefresh.isEmpty) {
+      throw const FormatException('Account update returned an incomplete session.');
+    }
+    _idToken = nextId;
+    _refreshToken = nextRefresh;
+    final seconds = int.tryParse(data['expiresIn']?.toString() ?? '') ?? 3600;
+    _expiresAt = DateTime.now().add(Duration(seconds: seconds));
+    await _saveSession();
+  }
+
+  /// Refreshes account properties from Firebase rather than trusting cached
+  /// profile data. Every response must refer to the signed-in user's UID.
+  Future<bool> refreshAccount() => _run(() async {
+    if (uid == null) {
+      throw const FormatException('Sign in to view account information.');
+    }
+    final response = await _firebasePost('lookup', {
+      'idToken': await _token(),
+    });
+    if (response.statusCode != 200) {
+      throw _firebaseFailure(response, 'Could not refresh account information.');
+    }
+    final decoded = jsonDecode(response.body) as Map<String, dynamic>;
+    final users = decoded['users'];
+    if (users is! List || users.isEmpty ||
+        users.first is! Map<String, dynamic>) {
+      throw const FormatException('Firebase returned no account information.');
+    }
+    final user = users.first as Map<String, dynamic>;
+    if (user['localId'] != uid) {
+      await _clearSession();
+      throw const FormatException('Account identity changed. Sign in again.');
+    }
+    email = user['email']?.toString() ?? email;
+    displayName = user['displayName']?.toString();
+    emailVerified = user['emailVerified'] == true;
+    final providers = user['providerUserInfo'];
+    googleConnected = providers is List &&
+        providers.any((p) => p is Map && p['providerId'] == 'google.com');
+    await _saveSession();
+    status = 'Account information refreshed.';
+  });
+
+  Future<bool> sendVerificationEmail() => _run(() async {
+    if (uid == null || email == null) {
+      throw const FormatException('Sign in with an email account first.');
+    }
+    if (emailVerified == true) {
+      throw const FormatException('Your email is already verified.');
+    }
+    final response = await _firebasePost('sendOobCode', {
+      'requestType': 'VERIFY_EMAIL',
+      'idToken': await _token(),
+    });
+    if (response.statusCode != 200) {
+      throw _firebaseFailure(response, 'Could not send the verification email.');
+    }
+    status = 'Verification email sent. Follow the link, then refresh account status.';
   });
 
   Future<bool> updateDisplayName(String name) => _run(() async {
@@ -687,8 +814,98 @@ class AppStore extends ChangeNotifier {
     if (response.statusCode != 200) {
       throw _firebaseFailure(response, 'Could not save your name.');
     }
+    await _rotateSessionTokens(
+      jsonDecode(response.body) as Map<String, dynamic>,
+    );
     displayName = trimmed;
+    await _saveSession();
     status = 'Personal info saved.';
+  });
+
+  /// Firebase returns new session tokens after a password change. Keep them
+  /// in secure storage so the user's next cloud sync remains authenticated.
+  Future<bool> changePassword(String nextPassword) => _run(() async {
+    if (uid == null) {
+      throw const FormatException('Sign in before changing your password.');
+    }
+    if (nextPassword.length < 8 || nextPassword.length > 128) {
+      throw const FormatException('Use a password between 8 and 128 characters.');
+    }
+    final response = await _firebasePost('update', {
+      'idToken': await _token(),
+      'password': nextPassword,
+      'returnSecureToken': true,
+    });
+    if (response.statusCode != 200) {
+      throw _firebaseFailure(response, 'Could not update your password.');
+    }
+    await _rotateSessionTokens(
+      jsonDecode(response.body) as Map<String, dynamic>,
+    );
+    status = 'Password updated. You can keep using this device.';
+  });
+
+  /// The progress DELETE endpoint authorizes against the same Firebase user
+  /// whose Authentication account we subsequently delete. We refuse to
+  /// delete Auth if the private cloud data could not be removed first.
+  Future<bool> deleteAccount() => _run(() async {
+    final accountUid = uid;
+    if (accountUid == null) {
+      throw const FormatException('Sign in before deleting your account.');
+    }
+    if (!cloudConfigured) {
+      throw const FormatException(
+        'Cloud access is required to delete your account and study data.',
+      );
+    }
+    final identityToken = await _token();
+    final removeProgress = await client
+        .delete(
+          _uri('/v1/progress'),
+          headers: {'Authorization': 'Bearer $identityToken'},
+        )
+        .timeout(const Duration(seconds: 20));
+    if (removeProgress.statusCode != 200 &&
+        removeProgress.statusCode != 204) {
+      throw const FormatException(
+        'Could not erase cloud progress. Your account has not been deleted.',
+      );
+    }
+    final removeAuth = await _firebasePost('delete', {
+      'idToken': identityToken,
+    });
+    if (removeAuth.statusCode != 200) {
+      final reason = _firebaseFailure(
+        removeAuth,
+        'Firebase could not delete the account.',
+      );
+      throw FormatException(
+        'Cloud progress was erased, but the account still exists: ${reason.message}',
+      );
+    }
+
+    var localCleanupFailed = false;
+    try {
+      if (!await prefs.remove('progress:$accountUid')) {
+        localCleanupFailed = true;
+      }
+    } catch (_) {
+      localCleanupFailed = true;
+    }
+    try {
+      await signOutGoogleIdentity();
+    } catch (_) {
+      // Firebase Authentication has already deleted the identity.
+    }
+    try {
+      await _clearSession();
+    } catch (_) {
+      _resetLocalSession();
+      localCleanupFailed = true;
+    }
+    status = localCleanupFailed
+        ? 'Account deleted, but some local data could not be cleared on this device.'
+        : 'Account and cloud progress permanently deleted.';
   });
 
   Future<bool> sendPasswordReset(String address) => _run(() async {
@@ -762,9 +979,12 @@ class AppStore extends ChangeNotifier {
 
   Future<void> signOut() async {
     if (busy) return;
-    signOutGoogleIdentity().ignore();
-    _pendingGoogleToken = null;
-    _pendingGoogleEmail = null;
+    try {
+      await signOutGoogleIdentity();
+    } catch (_) {
+      // The REST session is authoritative; an SDK sign-out failure must
+      // never keep access to a previous account in this app.
+    }
     await _clearSession();
     status = 'Signed out. Guest progress restored.';
     notifyListeners();
@@ -801,6 +1021,8 @@ class AppStore extends ChangeNotifier {
     }
     final data = jsonDecode(response.body) as Map<String, dynamic>;
     if (data['user_id'] != uid) {
+      await _clearSession();
+      notifyListeners();
       throw const FormatException('Session identity mismatch. Sign in again.');
     }
     _idToken = data['id_token'];

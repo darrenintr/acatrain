@@ -274,4 +274,161 @@ void main() {
       store.dispose();
     },
   );
+
+  test('account profile, verification and rotated credentials persist securely', () async {
+    final prefs = await SharedPreferences.getInstance();
+    var updates = 0;
+    final client = MockClient((request) async {
+      if (request.url.path.endsWith('lookup')) {
+        return http.Response(jsonEncode({
+          'users': [{
+            'localId': 'alice',
+            'email': 'alice@example.com',
+            'displayName': 'Alice',
+            'emailVerified': true,
+            'providerUserInfo': [{'providerId': 'google.com'}],
+          }],
+        }), 200);
+      }
+      if (request.url.path.endsWith('update')) {
+        final body = jsonDecode(request.body) as Map<String, dynamic>;
+        if (updates > 0) expect(body['idToken'], 'rotated-1');
+        updates++;
+        return http.Response(jsonEncode({
+          'localId': 'alice',
+          'email': 'alice@example.com',
+          'idToken': 'rotated-$updates',
+          'refreshToken': 'refresh-$updates',
+          'expiresIn': '3600',
+        }), 200);
+      }
+      return http.Response(jsonEncode({
+        'localId': 'alice',
+        'email': 'alice@example.com',
+        'idToken': 'signed-id',
+        'refreshToken': 'signed-refresh',
+        'expiresIn': '3600',
+      }), 200);
+    });
+    final store = AppStore(prefs, client: client, firebaseKey: 'test');
+    await store.load(seed: seed);
+    expect(await store.signIn('alice@example.com', 'old-password'), true);
+    expect(await store.refreshAccount(), true);
+    expect(store.emailVerified, true);
+    expect(store.googleConnected, true);
+    expect(store.displayName, 'Alice');
+    expect(await store.updateDisplayName('  Alice Updated  '), true);
+    expect(store.displayName, 'Alice Updated');
+    expect(await store.changePassword('safe-new-password'), true);
+    expect(updates, 2);
+    store.dispose();
+
+    final reopened = AppStore(prefs, client: client, firebaseKey: 'test');
+    await reopened.load(seed: seed);
+    expect(reopened.uid, 'alice');
+    expect(reopened.displayName, 'Alice Updated');
+    expect(reopened.emailVerified, true);
+    expect(reopened.googleConnected, true);
+    expect(prefs.getKeys().every((key) => !key.contains('token')), true);
+    reopened.dispose();
+  });
+
+  test('registration requests verification and password validation prevents API calls', () async {
+    var verificationRequests = 0;
+    var updateRequests = 0;
+    final client = MockClient((request) async {
+      if (request.url.path.endsWith('sendOobCode')) {
+        verificationRequests++;
+        expect((jsonDecode(request.body) as Map)['requestType'], 'VERIFY_EMAIL');
+        return http.Response('{}', 200);
+      }
+      if (request.url.path.endsWith('update')) updateRequests++;
+      return http.Response(jsonEncode({
+        'localId': 'new-user',
+        'email': 'new@example.com',
+        'idToken': 'new-id',
+        'refreshToken': 'new-refresh',
+        'expiresIn': '3600',
+      }), 200);
+    });
+    final store = AppStore(await SharedPreferences.getInstance(),
+      client: client, firebaseKey: 'test');
+    await store.load(seed: seed);
+    expect(await store.signIn('new@example.com', 'strong-password', register: true), true);
+    expect(verificationRequests, 1);
+    expect(store.emailVerified, false);
+    expect(store.status, contains('verify'));
+    expect(await store.changePassword('short'), false);
+    expect(updateRequests, 0);
+    store.dispose();
+  });
+
+  test('deleting an account erases only its cloud and local progress', () async {
+    final requests = <String>[];
+    final client = MockClient((request) async {
+      if (request.url.host == 'study.example') {
+        requests.add('cloud:' + request.method);
+        expect(request.url.path, '/v1/progress');
+        expect(request.headers['authorization'], 'Bearer signed-id');
+        return http.Response('{}', 200);
+      }
+      if (request.url.path.endsWith('delete')) {
+        requests.add('auth:delete');
+        return http.Response('{}', 200);
+      }
+      return http.Response(jsonEncode({
+        'localId': 'alice',
+        'email': 'alice@example.com',
+        'idToken': 'signed-id',
+        'refreshToken': 'signed-refresh',
+        'expiresIn': '3600',
+      }), 200);
+    });
+    final prefs = await SharedPreferences.getInstance();
+    final store = AppStore(prefs,
+      client: client, apiUrl: 'https://study.example', firebaseKey: 'test');
+    await store.load(seed: seed);
+    final set = store.bundle.sets.first;
+    await store.record(set, set.items.first, false);
+    expect(await store.signIn('alice@example.com', 'password'), true);
+    await store.record(set, set.items[1], true);
+    expect(prefs.getString('progress:guest'), isNotNull);
+    expect(prefs.getString('progress:alice'), isNotNull);
+    expect(await store.deleteAccount(), true);
+    expect(requests, ['cloud:DELETE', 'auth:delete']);
+    expect(store.uid, isNull);
+    expect(prefs.getString('progress:alice'), isNull);
+    expect(prefs.getString('progress:guest'), isNotNull);
+    expect(store.isWrong(set, set.items.first), true);
+    store.dispose();
+  });
+
+  test('cloud deletion failure leaves Firebase account and local progress intact', () async {
+    var authDeletes = 0;
+    final client = MockClient((request) async {
+      if (request.url.host == 'study.example') {
+        return http.Response('{}', 503);
+      }
+      if (request.url.path.endsWith('delete')) authDeletes++;
+      return http.Response(jsonEncode({
+        'localId': 'alice',
+        'email': 'alice@example.com',
+        'idToken': 'signed-id',
+        'refreshToken': 'signed-refresh',
+        'expiresIn': '3600',
+      }), 200);
+    });
+    final prefs = await SharedPreferences.getInstance();
+    final store = AppStore(prefs,
+      client: client, apiUrl: 'https://study.example', firebaseKey: 'test');
+    await store.load(seed: seed);
+    expect(await store.signIn('alice@example.com', 'password'), true);
+    final set = store.bundle.sets.first;
+    await store.record(set, set.items.first, true);
+    expect(await store.deleteAccount(), false);
+    expect(authDeletes, 0);
+    expect(store.uid, 'alice');
+    expect(prefs.getString('progress:alice'), isNotNull);
+    store.dispose();
+  });
 }

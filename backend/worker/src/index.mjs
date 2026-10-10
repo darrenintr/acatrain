@@ -102,15 +102,22 @@ export function createWorker(deps = {}) {
         out.headers.set('Cache-Control', out.headers.get('Cache-Control') ?? 'no-store');
         return out;
       };
-      if (request.method === 'OPTIONS') return finish(new Response(null, { status: 204, headers: { 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS', 'Access-Control-Allow-Headers': 'Authorization, Content-Type, Accept, MCP-Protocol-Version, If-None-Match', 'Access-Control-Max-Age': '600' } }));
+      if (request.method === 'OPTIONS') return finish(new Response(null, { status: 204, headers: { 'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS', 'Access-Control-Allow-Headers': 'Authorization, Content-Type, Accept, MCP-Protocol-Version, If-None-Match', 'Access-Control-Max-Age': '600' } }));
       const url = new URL(request.url);
       const getStore = deps.adminStore ? async () => deps.adminStore : async () => new Firestore(env, await accessToken(env));
       if (url.pathname === '/health' && request.method === 'GET') return finish(json({ ok: true, service: 'acatrain', configured: !!(env.FIREBASE_PROJECT_ID && env.FIREBASE_SERVICE_ACCOUNT) }));
       if (url.pathname === '/mcp') return finish(await mcp(request, env, getStore));
       if (url.pathname === '/v1/progress') {
-        assert(['GET', 'POST'].includes(request.method), 'Method not allowed', 405);
+        assert(['GET', 'POST', 'DELETE'].includes(request.method), 'Method not allowed', 405);
         const { uid, store } = await (deps.userStore ?? userStore)(request, env);
         const path = `users/${uid}/state/progress`;
+        if (request.method === 'DELETE') {
+          // The Firebase user must still exist while its ID token authorizes
+          // deleting personal study data. The client calls this before
+          // Firebase Authentication account deletion.
+          await store.delete(path);
+          return finish(json({ ok: true }));
+        }
         if (request.method === 'GET') {
           const state = await store.get(path);
           return finish(json({ items: state?.value ?? {}, version: state?.version ?? null }));
