@@ -9,6 +9,10 @@ class MemoryStore {
   data = new Map(); counter = 0;
   async get(path) { return structuredClone(this.data.get(path) ?? null); }
   async delete(path) { this.data.delete(path); }
+  async eraseAccountProgress(uid) {
+    this.data.set(`users/${uid}/state/deletion`, { value: { deleted: true }, version: String(++this.counter) });
+    this.data.delete(`users/${uid}/state/progress`);
+  }
   async commit(writes) {
     for (const w of writes) {
       const current = this.data.get(w.path);
@@ -192,6 +196,7 @@ test('account progress deletion requires identity and never touches another user
   assert.equal((await worker.fetch(remove('Bearer alice'), env)).status, 200);
   assert.equal((await worker.fetch(remove('Bearer alice'), env)).status, 200);
   assert.equal(await db.get('users/alice/state/progress'), null);
+  assert.deepEqual((await db.get('users/alice/state/deletion')).value, { deleted: true });
   assert.ok(await db.get('users/bob/state/progress'));
   assert.equal((await worker.fetch(remove('Bearer bob'), env)).status, 200);
   assert.equal(await db.get('users/bob/state/progress'), null);
@@ -216,4 +221,24 @@ test('Firestore account deletion uses the owner token; missing documents are saf
   const denied = new Firestore({ FIREBASE_PROJECT_ID: 'acatrain-test' },
     'owner', async () => Response.json({ error: { status: 'PERMISSION_DENIED' } }, { status: 403 }));
   await assert.rejects(denied.delete('users/bob/state/progress'), e => e.status === 403);
+});
+
+test('account deletion marks the UID and erases progress in one owner-authorized commit', async () => {
+  const requests = [];
+  const db = new Firestore({ FIREBASE_PROJECT_ID: 'acatrain-test' }, 'owner-token', async (url, init) => {
+    requests.push({ url, ...init });
+    return Response.json({ writeResults: [{}, {}] });
+  });
+  await db.eraseAccountProgress('alice');
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].headers.Authorization, 'Bearer owner-token');
+  const root = 'projects/acatrain-test/databases/(default)/documents';
+  assert.equal(requests[0].url, `https://firestore.googleapis.com/v1/${root}:commit`);
+  assert.deepEqual(JSON.parse(requests[0].body).writes, [
+    { update: { name: `${root}/users/alice/state/deletion`, fields: { deleted: { booleanValue: true } } } },
+    { delete: `${root}/users/alice/state/progress` }
+  ]);
+  const denied = new Firestore({ FIREBASE_PROJECT_ID: 'acatrain-test' }, 'owner-token',
+    async () => Response.json({ error: { status: 'PERMISSION_DENIED' } }, { status: 403 }));
+  await assert.rejects(denied.eraseAccountProgress('bob'), e => e.status === 403);
 });

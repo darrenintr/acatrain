@@ -18,6 +18,7 @@ export async function verifyDeployment({ base, origin, allowEmpty = false, fetch
   if (!health.ok) throw new Error(`Worker health returned HTTP ${health.status}`);
   const state = await health.json();
   if (!state.ok || !state.configured) throw new Error('Worker is not configured');
+  if (state.accountDeletionVersion !== 2) throw new Error('Worker must support deletion markers before deploying this Web build');
 
   // An unauthenticated DELETE is harmless: a compatible Worker rejects it
   // before accessing Firestore. Old Workers return 405 instead of 401.

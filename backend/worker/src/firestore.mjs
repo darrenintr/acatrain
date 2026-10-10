@@ -81,6 +81,14 @@ export class Firestore {
   async delete(path) {
     await this.request(`${this.root}/${path}`, 'DELETE');
   }
+  async eraseAccountProgress(uid) {
+    // The owner token remains subject to Rules. Mark deletion and remove
+    // progress in one atomic commit so another session cannot recreate it.
+    return this.request(`${this.root}:commit`, 'POST', { writes: [
+      { update: { name: `${this.root}/users/${uid}/state/deletion`, fields: { deleted: { booleanValue: true } } } },
+      { delete: `${this.root}/users/${uid}/state/progress` }
+    ] });
+  }
   async get(path) {
     const result = await this.request(`${this.root}/${path}`);
     if (!result) return null;
