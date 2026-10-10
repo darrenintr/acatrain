@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import 'package:acatrain/app_ui.dart';
 import 'package:acatrain/expressive.dart';
 import 'package:acatrain/haptics.dart';
 import 'package:acatrain/language.dart';
@@ -10,7 +11,7 @@ import 'package:acatrain/store.dart';
 /// Sign-in and registration sheet. Owns only ephemeral form state;
 /// all credentials and account operations remain in AppStore.
 class AcatrainAuthSheet extends StatefulWidget {
-  const AcatrainAuthSheet({required this.store});
+  const AcatrainAuthSheet({super.key, required this.store});
   final AppStore store;
 
   @override

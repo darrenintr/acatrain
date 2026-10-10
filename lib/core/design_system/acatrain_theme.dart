@@ -1,6 +1,7 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
+import 'package:acatrain/app_ui.dart';
 import 'package:acatrain/expressive.dart';
 import 'package:acatrain/subscription.dart';
 
@@ -126,7 +127,7 @@ ThemeData buildAcatrainTheme(Brightness brightness, AcatrainPlan plan) {
     colorScheme: colors,
     scaffoldBackgroundColor: colors.surface,
     visualDensity: VisualDensity.standard,
-    fontFamily: _fontFamily,
+    fontFamily: acatrainFontFamily,
     textTheme: textTheme,
     extensions: [tones],
     appBarTheme: AppBarTheme(
