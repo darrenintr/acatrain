@@ -607,6 +607,21 @@ class AppStore extends ChangeNotifier {
       _pendingGoogleEmail = null;
     }
     await _applySession(data, fallbackEmail: address.trim());
+    if (register) {
+      emailVerified = false;
+      try {
+        final verification = await _firebasePost('sendOobCode', {
+          'requestType': 'VERIFY_EMAIL',
+          'idToken': await _token(),
+        });
+        status = verification.statusCode == 200
+            ? 'Account created. Check your inbox to verify your email.'
+            : 'Account created. Send a verification email from Personal info.';
+      } catch (_) {
+        status = 'Account created. Send a verification email from Personal info.';
+      }
+      await _saveSession();
+    }
     if (!register) {
       try {
         await prepareGoogleIdentityPassword(address.trim(), password);
@@ -615,8 +630,9 @@ class AppStore extends ChangeNotifier {
         // the user chooses to connect Google.
       }
     }
-    status =
-        'Signed in. Use Sync progress to merge this account across devices.';
+    if (!register) {
+      status = 'Signed in. Use Sync progress to merge this account across devices.';
+    }
   });
 
   Future<Map<String, dynamic>> _exchangeGoogle(
@@ -682,6 +698,8 @@ class AppStore extends ChangeNotifier {
         );
       }
       await _applySession(data, fallbackEmail: email);
+      googleConnected = true;
+      await _saveSession();
       status =
           'Google is connected to your account. Your progress stays with this account.';
       return;
@@ -696,6 +714,8 @@ class AppStore extends ChangeNotifier {
         );
       }
       await _applySession(data);
+      googleConnected = true;
+      await _saveSession();
       status =
           'Signed in with Google. Use Sync progress to merge progress across devices.';
     } on FormatException catch (error) {
@@ -706,6 +726,73 @@ class AppStore extends ChangeNotifier {
       }
       rethrow;
     }
+  });
+
+  Future<void> _rotateSessionTokens(Map<String, dynamic> data) async {
+    if (uid == null || data['localId'] != uid) {
+      throw const FormatException('Account identity changed. Sign in again.');
+    }
+    final nextId = data['idToken'];
+    final nextRefresh = data['refreshToken'];
+    if (nextId is! String || nextId.isEmpty ||
+        nextRefresh is! String || nextRefresh.isEmpty) {
+      throw const FormatException('Account update returned an incomplete session.');
+    }
+    _idToken = nextId;
+    _refreshToken = nextRefresh;
+    final seconds = int.tryParse(data['expiresIn']?.toString() ?? '') ?? 3600;
+    _expiresAt = DateTime.now().add(Duration(seconds: seconds));
+    await _saveSession();
+  }
+
+  /// Refreshes account properties from Firebase rather than trusting cached
+  /// profile data. Every response must refer to the signed-in user's UID.
+  Future<bool> refreshAccount() => _run(() async {
+    if (uid == null) {
+      throw const FormatException('Sign in to view account information.');
+    }
+    final response = await _firebasePost('lookup', {
+      'idToken': await _token(),
+    });
+    if (response.statusCode != 200) {
+      throw _firebaseFailure(response, 'Could not refresh account information.');
+    }
+    final decoded = jsonDecode(response.body) as Map<String, dynamic>;
+    final users = decoded['users'];
+    if (users is! List || users.isEmpty ||
+        users.first is! Map<String, dynamic>) {
+      throw const FormatException('Firebase returned no account information.');
+    }
+    final user = users.first as Map<String, dynamic>;
+    if (user['localId'] != uid) {
+      await _clearSession();
+      throw const FormatException('Account identity changed. Sign in again.');
+    }
+    email = user['email']?.toString() ?? email;
+    displayName = user['displayName']?.toString();
+    emailVerified = user['emailVerified'] == true;
+    final providers = user['providerUserInfo'];
+    googleConnected = providers is List &&
+        providers.any((p) => p is Map && p['providerId'] == 'google.com');
+    await _saveSession();
+    status = 'Account information refreshed.';
+  });
+
+  Future<bool> sendVerificationEmail() => _run(() async {
+    if (uid == null || email == null) {
+      throw const FormatException('Sign in with an email account first.');
+    }
+    if (emailVerified == true) {
+      throw const FormatException('Your email is already verified.');
+    }
+    final response = await _firebasePost('sendOobCode', {
+      'requestType': 'VERIFY_EMAIL',
+      'idToken': await _token(),
+    });
+    if (response.statusCode != 200) {
+      throw _firebaseFailure(response, 'Could not send the verification email.');
+    }
+    status = 'Verification email sent. Follow the link, then refresh account status.';
   });
 
   Future<bool> updateDisplayName(String name) => _run(() async {
@@ -721,8 +808,96 @@ class AppStore extends ChangeNotifier {
     if (response.statusCode != 200) {
       throw _firebaseFailure(response, 'Could not save your name.');
     }
+    await _rotateSessionTokens(
+      jsonDecode(response.body) as Map<String, dynamic>,
+    );
     displayName = trimmed;
+    await _saveSession();
     status = 'Personal info saved.';
+  });
+
+  /// Firebase returns new session tokens after a password change. Keep them
+  /// in secure storage so the user's next cloud sync remains authenticated.
+  Future<bool> changePassword(String nextPassword) => _run(() async {
+    if (uid == null) {
+      throw const FormatException('Sign in before changing your password.');
+    }
+    if (nextPassword.length < 8 || nextPassword.length > 128) {
+      throw const FormatException('Use a password between 8 and 128 characters.');
+    }
+    final response = await _firebasePost('update', {
+      'idToken': await _token(),
+      'password': nextPassword,
+      'returnSecureToken': true,
+    });
+    if (response.statusCode != 200) {
+      throw _firebaseFailure(response, 'Could not update your password.');
+    }
+    await _rotateSessionTokens(
+      jsonDecode(response.body) as Map<String, dynamic>,
+    );
+    status = 'Password updated. You can keep using this device.';
+  });
+
+  /// The progress DELETE endpoint authorizes against the same Firebase user
+  /// whose Authentication account we subsequently delete. We refuse to
+  /// delete Auth if the private cloud data could not be removed first.
+  Future<bool> deleteAccount() => _run(() async {
+    final accountUid = uid;
+    if (accountUid == null) {
+      throw const FormatException('Sign in before deleting your account.');
+    }
+    if (!cloudConfigured) {
+      throw const FormatException(
+        'Cloud access is required to delete your account and study data.',
+      );
+    }
+    final identityToken = await _token();
+    final removeProgress = await client
+        .delete(
+          _uri('/v1/progress'),
+          headers: {'Authorization': 'Bearer $identityToken'},
+        )
+        .timeout(const Duration(seconds: 20));
+    if (removeProgress.statusCode != 200 &&
+        removeProgress.statusCode != 204) {
+      throw const FormatException(
+        'Could not erase cloud progress. Your account has not been deleted.',
+      );
+    }
+    final removeAuth = await _firebasePost('delete', {
+      'idToken': identityToken,
+    });
+    if (removeAuth.statusCode != 200) {
+      final reason = _firebaseFailure(
+        removeAuth,
+        'Firebase could not delete the account.',
+      );
+      throw FormatException(
+        'Cloud progress was erased, but the account still exists: ${reason.message}',
+      );
+    }
+
+    var localCleanupFailed = false;
+    try {
+      await prefs.remove('progress:$accountUid');
+    } catch (_) {
+      localCleanupFailed = true;
+    }
+    try {
+      await signOutGoogleIdentity();
+    } catch (_) {
+      // Firebase Authentication has already deleted the identity.
+    }
+    try {
+      await _clearSession();
+    } catch (_) {
+      _resetLocalSession();
+      localCleanupFailed = true;
+    }
+    status = localCleanupFailed
+        ? 'Account deleted, but some local data could not be cleared on this device.'
+        : 'Account and cloud progress permanently deleted.';
   });
 
   Future<bool> sendPasswordReset(String address) => _run(() async {
