@@ -8,6 +8,7 @@ const sample = () => ({ schemaVersion: 1, minAppBuild: 1, sets: [{ id: 'econ', t
 class MemoryStore {
   data = new Map(); counter = 0;
   async get(path) { return structuredClone(this.data.get(path) ?? null); }
+  async delete(path) { this.data.delete(path); }
   async commit(writes) {
     for (const w of writes) {
       const current = this.data.get(w.path);
@@ -167,4 +168,52 @@ test('Firestore write failures are not mistaken for missing documents', async ()
   await assert.rejects(missing.commit([{ path: 'drafts/a', value: {} }]), e => e.status === 502);
   const stale = new Firestore(env, 'token', async () => Response.json({ error: { status: 'FAILED_PRECONDITION' } }, { status: 400 }));
   await assert.rejects(stale.commit([{ path: 'drafts/a', value: {} }]), e => e.status === 409);
+});
+
+test('account progress deletion requires identity and never touches another user', async () => {
+  const db = new MemoryStore();
+  await db.commit([
+    { path: 'users/alice/state/progress', value: { aliceItem: 1 } },
+    { path: 'users/bob/state/progress', value: { bobItem: 1 } },
+  ]);
+  const worker = createWorker({
+    userStore: async request => {
+      const token = request.headers.get('Authorization');
+      if (!['Bearer alice', 'Bearer bob'].includes(token)) {
+        throw new AppError(401, 'Sign in is required');
+      }
+      return { uid: token.slice(7), store: db };
+    },
+  });
+  const remove = token => new Request('https://study.example/v1/progress', {
+    method: 'DELETE', headers: token ? { Authorization: token } : {},
+  });
+  assert.equal((await worker.fetch(remove(), env)).status, 401);
+  assert.equal((await worker.fetch(remove('Bearer alice'), env)).status, 200);
+  assert.equal((await worker.fetch(remove('Bearer alice'), env)).status, 200);
+  assert.equal(await db.get('users/alice/state/progress'), null);
+  assert.ok(await db.get('users/bob/state/progress'));
+  assert.equal((await worker.fetch(remove('Bearer bob'), env)).status, 200);
+  assert.equal(await db.get('users/bob/state/progress'), null);
+});
+
+test('Firestore account deletion uses the owner token; missing documents are safe', async () => {
+  const requests = [];
+  const owner = new Firestore({ FIREBASE_PROJECT_ID: 'acatrain-test' },
+    'private-owner-token', async (url, init) => {
+      requests.push({ url, ...init });
+      return new Response(null, { status: 204 });
+    });
+  await owner.delete('users/alice/state/progress');
+  assert.equal(requests[0].method, 'DELETE');
+  assert.equal(requests[0].headers.Authorization, 'Bearer private-owner-token');
+  assert.ok(requests[0].url.endsWith('/users/alice/state/progress'));
+
+  const alreadyMissing = new Firestore({ FIREBASE_PROJECT_ID: 'acatrain-test' },
+    'owner', async () => Response.json({ error: { status: 'NOT_FOUND' } }, { status: 404 }));
+  await alreadyMissing.delete('users/alice/state/progress');
+
+  const denied = new Firestore({ FIREBASE_PROJECT_ID: 'acatrain-test' },
+    'owner', async () => Response.json({ error: { status: 'PERMISSION_DENIED' } }, { status: 403 }));
+  await assert.rejects(denied.delete('users/bob/state/progress'), e => e.status === 403);
 });
