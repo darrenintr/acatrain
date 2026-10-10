@@ -58,6 +58,8 @@ class AppStore extends ChangeNotifier {
   /// the learner that new study content is ready.
   final contentReleases = ValueNotifier<int>(0);
   String? uid, email, displayName, _idToken, _refreshToken;
+  bool? emailVerified;
+  bool googleConnected = false;
   String? _pendingGoogleToken, _pendingGoogleEmail;
   DateTime? _expiresAt;
   DateTime? lastContentSync;
@@ -219,7 +221,11 @@ class AppStore extends ChangeNotifier {
       'INVALID_PASSWORD' ||
       'INVALID_LOGIN_CREDENTIALS' => 'The email or password is incorrect.',
       'WEAK_PASSWORD' =>
-        'Choose a stronger password with at least 6 characters.',
+        'Choose a stronger password with at least 8 characters.',
+      'INVALID_ID_TOKEN' || 'TOKEN_EXPIRED' || 'USER_NOT_FOUND' =>
+        'Your session is no longer valid. Sign in again.',
+      'CREDENTIAL_TOO_OLD_LOGIN_AGAIN' =>
+        'For security, sign out and sign in again before changing your account.',
       'OPERATION_NOT_ALLOWED' =>
         'This sign-in method is not enabled in Firebase Authentication.',
       'TOO_MANY_ATTEMPTS_TRY_LATER' => 'Too many attempts. Try again later.',
@@ -241,8 +247,21 @@ class AppStore extends ChangeNotifier {
         'The authentication response was incomplete.',
       );
     }
+    final sameUser = uid == nextUid;
+    if (!sameUser) {
+      emailVerified = null;
+      googleConnected = false;
+    }
     uid = nextUid;
     email = data['email']?.toString() ?? fallbackEmail;
+    if (data['emailVerified'] is bool) {
+      emailVerified = data['emailVerified'] as bool;
+    }
+    if (data['providerUserInfo'] is List) {
+      googleConnected = (data['providerUserInfo'] as List).any(
+        (provider) => provider is Map && provider['providerId'] == 'google.com',
+      );
+    }
     displayName = data['displayName']?.toString();
     _idToken = nextIdToken;
     _refreshToken = nextRefreshToken;
@@ -255,6 +274,7 @@ class AppStore extends ChangeNotifier {
   Future<void> _saveSession() async {
     await sessionStorage.write(key: _sessionKey, value: jsonEncode({
       'uid': uid, 'email': email, 'displayName': displayName,
+      'emailVerified': emailVerified, 'googleConnected': googleConnected,
       'idToken': _idToken, 'refreshToken': _refreshToken,
       'expiresAt': _expiresAt?.toUtc().toIso8601String(),
     }));
@@ -274,6 +294,8 @@ class AppStore extends ChangeNotifier {
       uid = restoredUid;
       email = data['email'] as String?;
       displayName = data['displayName'] as String?;
+      emailVerified = data['emailVerified'] as bool?;
+      googleConnected = data['googleConnected'] == true;
       _idToken = data['idToken'] as String?;
       _refreshToken = refresh;
       _expiresAt = DateTime.tryParse(data['expiresAt']?.toString() ?? '');
@@ -305,6 +327,8 @@ class AppStore extends ChangeNotifier {
     _idToken = null;
     _refreshToken = null;
     _expiresAt = null;
+    emailVerified = null;
+    googleConnected = false;
     _pendingGoogleToken = null;
     _pendingGoogleEmail = null;
     _loadProgress();
