@@ -105,7 +105,7 @@ export function createWorker(deps = {}) {
       if (request.method === 'OPTIONS') return finish(new Response(null, { status: 204, headers: { 'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS', 'Access-Control-Allow-Headers': 'Authorization, Content-Type, Accept, MCP-Protocol-Version, If-None-Match', 'Access-Control-Max-Age': '600' } }));
       const url = new URL(request.url);
       const getStore = deps.adminStore ? async () => deps.adminStore : async () => new Firestore(env, await accessToken(env));
-      if (url.pathname === '/health' && request.method === 'GET') return finish(json({ ok: true, service: 'acatrain', configured: !!(env.FIREBASE_PROJECT_ID && env.FIREBASE_SERVICE_ACCOUNT) }));
+      if (url.pathname === '/health' && request.method === 'GET') return finish(json({ ok: true, service: 'acatrain', accountDeletionVersion: 2, configured: !!(env.FIREBASE_PROJECT_ID && env.FIREBASE_SERVICE_ACCOUNT) }));
       if (url.pathname === '/mcp') return finish(await mcp(request, env, getStore));
       if (url.pathname === '/v1/progress') {
         assert(['GET', 'POST', 'DELETE'].includes(request.method), 'Method not allowed', 405);
@@ -115,7 +115,7 @@ export function createWorker(deps = {}) {
           // The Firebase user must still exist while its ID token authorizes
           // deleting personal study data. The client calls this before
           // Firebase Authentication account deletion.
-          await store.delete(path);
+          await store.eraseAccountProgress(uid);
           return finish(json({ ok: true }));
         }
         if (request.method === 'GET') {

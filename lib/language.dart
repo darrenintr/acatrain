@@ -7,6 +7,10 @@ String tr(BuildContext context, String english) =>
     isCantonese(context) ? (_cantonese[english] ?? english) : english;
 
 const _cantonese = <String, String>{
+  'Cloud progress was erased, but account deletion could not be confirmed. Reconnect and try again.': '雲端進度已清除，但未能確認帳戶刪除結果。請重新連線再試。',
+  'Cloud progress was erased, but the account still exists. Sign out, sign in again, and retry deletion.': '雲端進度已清除，但帳戶仍然存在。請登出、重新登入，再重試刪除。',
+  'Signed out, but the saved session could not be cleared. Close other tabs and try again.': '已登出，但未能清除已儲存嘅登入憑證。請關閉其他分頁再試。',
+  'Sign out and sign in with your password again before connecting Google on Web.': '喺網頁連結 Google 前，請先登出並用密碼重新登入。',
   'Manage account': '管理帳戶',
   'You are signed out.': '你已經登出。',
   'Your account': '你嘅帳戶',

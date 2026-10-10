@@ -38,7 +38,7 @@ Future<void> prepareGoogleIdentityPassword(
   );
 }
 
-Future<String> googleIdentityToken({bool linkExisting = false}) async {
+Future<String> googleIdentityToken({bool linkExisting = false, String? expectedUid}) async {
   if (Firebase.apps.isEmpty) {
     throw const FormatException(
       'Set Firebase web app ID, project ID and sender ID to enable Google sign-in on Web.',
@@ -46,6 +46,11 @@ Future<String> googleIdentityToken({bool linkExisting = false}) async {
   }
   try {
     final auth = FirebaseAuth.instance;
+    if (linkExisting && (expectedUid == null || auth.currentUser?.uid != expectedUid)) {
+      throw const FormatException(
+        'Sign out and sign in with your password again before connecting Google on Web.',
+      );
+    }
     final alreadyLinked =
         auth.currentUser?.providerData.any(
           (provider) => provider.providerId == 'google.com',

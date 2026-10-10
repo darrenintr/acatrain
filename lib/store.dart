@@ -628,13 +628,11 @@ class AppStore extends ChangeNotifier {
       }
       await _saveSession();
     }
-    if (!register) {
-      try {
-        await prepareGoogleIdentityPassword(address.trim(), password);
-      } catch (_) {
-        // REST sign-in succeeded. Web SDK setup is only needed later if
-        // the user chooses to connect Google.
-      }
+    try {
+      await prepareGoogleIdentityPassword(address.trim(), password);
+    } catch (_) {
+      // The REST session remains authoritative. Google linking separately
+      // checks the SDK identity before it can modify an account.
     }
     if (!register) {
       status = 'Signed in. Use Sync progress to merge this account across devices.';
@@ -676,7 +674,7 @@ class AppStore extends ChangeNotifier {
   Future<bool> signInWithGoogle() => _run(() async {
     final googleToken =
         await (googleTokenProvider?.call() ??
-            googleIdentityToken(linkExisting: uid != null));
+            googleIdentityToken(linkExisting: uid != null, expectedUid: uid));
     String? googleEmail;
     try {
       final payload = googleToken.split('.')[1];
@@ -734,12 +732,15 @@ class AppStore extends ChangeNotifier {
     }
   });
 
-  Future<void> _rotateSessionTokens(Map<String, dynamic> data) async {
+  Future<void> _rotateSessionTokens(Map<String, dynamic> data, {bool allowUnchanged = false}) async {
     if (uid == null || data['localId'] != uid) {
       throw const FormatException('Account identity changed. Sign in again.');
     }
     final nextId = data['idToken'];
     final nextRefresh = data['refreshToken'];
+    // Firebase profile-only updates can omit both tokens even when
+    // returnSecureToken is true. Password changes still require rotation.
+    if (allowUnchanged && nextId == null && nextRefresh == null) return;
     if (nextId is! String || nextId.isEmpty ||
         nextRefresh is! String || nextRefresh.isEmpty) {
       throw const FormatException('Account update returned an incomplete session.');
@@ -816,6 +817,7 @@ class AppStore extends ChangeNotifier {
     }
     await _rotateSessionTokens(
       jsonDecode(response.body) as Map<String, dynamic>,
+      allowUnchanged: true,
     );
     displayName = trimmed;
     await _saveSession();
@@ -871,16 +873,19 @@ class AppStore extends ChangeNotifier {
         'Could not erase cloud progress. Your account has not been deleted.',
       );
     }
-    final removeAuth = await _firebasePost('delete', {
-      'idToken': identityToken,
-    });
-    if (removeAuth.statusCode != 200) {
-      final reason = _firebaseFailure(
-        removeAuth,
-        'Firebase could not delete the account.',
+    http.Response removeAuth;
+    try {
+      removeAuth = await _firebasePost('delete', {
+        'idToken': identityToken,
+      });
+    } catch (_) {
+      throw const FormatException(
+        'Cloud progress was erased, but account deletion could not be confirmed. Reconnect and try again.',
       );
-      throw FormatException(
-        'Cloud progress was erased, but the account still exists: ${reason.message}',
+    }
+    if (removeAuth.statusCode != 200) {
+      throw const FormatException(
+        'Cloud progress was erased, but the account still exists. Sign out, sign in again, and retry deletion.',
       );
     }
 
@@ -985,9 +990,14 @@ class AppStore extends ChangeNotifier {
       // The REST session is authoritative; an SDK sign-out failure must
       // never keep access to a previous account in this app.
     }
-    await _clearSession();
-    status = 'Signed out. Guest progress restored.';
-    notifyListeners();
+    try {
+      await _clearSession();
+      status = 'Signed out. Guest progress restored.';
+    } catch (_) {
+      status = 'Signed out, but the saved session could not be cleared. Close other tabs and try again.';
+    } finally {
+      notifyListeners();
+    }
   }
 
   Future<String> _token() async {

@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:async';
 import 'dart:io';
 import 'package:acatrain/store.dart';
 import 'package:crypto/crypto.dart';
@@ -363,6 +364,33 @@ void main() {
     store.dispose();
   });
 
+  test('real profile response without rotated tokens keeps the existing session', () async {
+    final client = MockClient((request) async {
+      if (request.url.path.endsWith('update')) {
+        return http.Response('{"localId":"alice","displayName":"Updated name","emailVerified":false}', 200);
+      }
+      if (request.url.host == 'study.example') {
+        expect(request.headers['authorization'], 'Bearer signed-id');
+        return http.Response(request.method == 'GET' ? '{"items":{},"version":null}' : '{}', 200);
+      }
+      return http.Response(jsonEncode({
+        'localId': 'alice', 'email': 'alice@example.com',
+        'idToken': 'signed-id', 'refreshToken': 'signed-refresh',
+        'expiresIn': '3600',
+      }), 200);
+    });
+    final store = AppStore(await SharedPreferences.getInstance(),
+      client: client, apiUrl: 'https://study.example', firebaseKey: 'test');
+    await store.load(seed: seed);
+    await store.signIn('alice@example.com', 'password');
+    expect(await store.updateDisplayName('Updated name'), true);
+    expect(store.displayName, 'Updated name');
+    expect(await store.syncProgress(), true);
+    // A missing token pair must still fail for security-sensitive updates.
+    expect(await store.changePassword('new-strong-password'), false);
+    store.dispose();
+  });
+
   test('deleting an account erases only its cloud and local progress', () async {
     final requests = <String>[];
     final client = MockClient((request) async {
@@ -429,6 +457,77 @@ void main() {
     expect(authDeletes, 0);
     expect(store.uid, 'alice');
     expect(prefs.getString('progress:alice'), isNotNull);
+    store.dispose();
+  });
+
+  for (final networkFailure in [false, true]) {
+    test('Auth deletion ${networkFailure ? 'timeout' : 'rejection'} preserves local progress and can be retried', () async {
+      var authDeletes = 0;
+      var cloudDeletes = 0;
+      final client = MockClient((request) async {
+        if (request.url.host == 'study.example') {
+          cloudDeletes++;
+          expect(request.method, 'DELETE');
+          return http.Response('{"ok":true}', 200);
+        }
+        if (request.url.path.endsWith('delete')) {
+          authDeletes++;
+          if (authDeletes == 1) {
+            if (networkFailure) throw TimeoutException('Lost Auth response');
+            return http.Response('{"error":{"message":"CREDENTIAL_TOO_OLD_LOGIN_AGAIN"}}', 400);
+          }
+          return http.Response('{}', 200);
+        }
+        return http.Response(jsonEncode({
+          'localId': 'alice', 'email': 'alice@example.com',
+          'idToken': 'signed-id', 'refreshToken': 'signed-refresh',
+          'expiresIn': '3600',
+        }), 200);
+      });
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('progress:bob', '{}');
+      final store = AppStore(prefs, client: client,
+        apiUrl: 'https://study.example', firebaseKey: 'test');
+      await store.load(seed: seed);
+      final set = store.bundle.sets.first;
+      await store.record(set, set.items.first, false);
+      await store.signIn('alice@example.com', 'password');
+      await store.record(set, set.items[1], true);
+      final local = prefs.getString('progress:alice');
+      expect(await store.deleteAccount(), false);
+      expect(store.status, contains('Cloud progress was erased'));
+      expect(store.uid, 'alice');
+      expect(prefs.getString('progress:alice'), local);
+      expect(store.progress, isNotEmpty);
+      await store.signOut();
+      await store.signIn('alice@example.com', 'password');
+      expect(await store.deleteAccount(), true);
+      expect(cloudDeletes, 2);
+      expect(authDeletes, 2);
+      expect(prefs.getString('progress:alice'), isNull);
+      expect(prefs.getString('progress:bob'), '{}');
+      expect(prefs.getString('progress:guest'), isNotNull);
+      expect(store.uid, isNull);
+      store.dispose();
+    });
+  }
+
+  test('Google linking cannot switch the REST identity or its local progress', () async {
+    final client = MockClient((request) async => http.Response(jsonEncode({
+      'localId': request.url.path.endsWith('signInWithIdp') ? 'bob' : 'alice',
+      'email': 'alice@example.com', 'idToken': 'signed-id',
+      'refreshToken': 'signed-refresh', 'expiresIn': '3600',
+    }), 200));
+    final store = AppStore(await SharedPreferences.getInstance(),
+      client: client, firebaseKey: 'test', googleTokenProvider: () async => 'google-token');
+    await store.load(seed: seed);
+    await store.signIn('alice@example.com', 'password');
+    final set = store.bundle.sets.first;
+    await store.record(set, set.items.first, false);
+    expect(await store.signInWithGoogle(), false);
+    expect(store.uid, 'alice');
+    expect(store.googleConnected, false);
+    expect(store.isWrong(set, set.items.first), true);
     store.dispose();
   });
 }
