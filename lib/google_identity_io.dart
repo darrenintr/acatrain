@@ -21,7 +21,7 @@ Future<void> prepareGoogleIdentityPassword(
   String password,
 ) async {}
 
-Future<String> googleIdentityToken({bool linkExisting = false}) async {
+Future<String> googleIdentityToken({bool linkExisting = false, String? expectedUid}) async {
   if (defaultTargetPlatform == TargetPlatform.android ||
       defaultTargetPlatform == TargetPlatform.iOS) {
     GoogleSignInAccount account;

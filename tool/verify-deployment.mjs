@@ -7,8 +7,8 @@ export async function verifyDeployment({ base, origin, allowEmpty = false, fetch
     throw new Error('ACATRAIN_API_URL must be an HTTPS origin');
   }
   const headers = origin ? { Origin: origin } : {};
-  async function get(path) {
-    const response = await fetcher(`${url.origin}${path}`, { headers, signal: AbortSignal.timeout(30000) });
+  async function get(path, method = 'GET') {
+    const response = await fetcher(`${url.origin}${path}`, { method, headers, signal: AbortSignal.timeout(30000) });
     if (origin && response.headers.get('Access-Control-Allow-Origin') !== origin) {
       throw new Error(`CORS is not configured for ${origin} on ${path}`);
     }
@@ -18,6 +18,14 @@ export async function verifyDeployment({ base, origin, allowEmpty = false, fetch
   if (!health.ok) throw new Error(`Worker health returned HTTP ${health.status}`);
   const state = await health.json();
   if (!state.ok || !state.configured) throw new Error('Worker is not configured');
+
+  // An unauthenticated DELETE is harmless: a compatible Worker rejects it
+  // before accessing Firestore. Old Workers return 405 instead of 401.
+  const deletion = await get('/v1/progress', 'DELETE');
+  if (deletion.status !== 401) throw new Error(`Account deletion API is incompatible: HTTP ${deletion.status}`);
+  const preflight = await get('/v1/progress', 'OPTIONS');
+  const methods = (preflight.headers.get('Access-Control-Allow-Methods') ?? '').split(',').map(s => s.trim());
+  if (preflight.status !== 204 || !methods.includes('DELETE')) throw new Error('Account deletion CORS does not allow DELETE');
 
   // /health alone never exercises OAuth or the Firestore adapter.
   const response = await get('/v1/manifest');
