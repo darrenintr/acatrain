@@ -234,7 +234,9 @@ class AppStore extends ChangeNotifier {
     final nextUid = data['localId']?.toString();
     final nextIdToken = data['idToken']?.toString();
     final nextRefreshToken = data['refreshToken']?.toString();
-    if (nextUid == null || nextIdToken == null || nextRefreshToken == null) {
+    if (nextUid == null || nextUid.isEmpty ||
+        nextIdToken == null || nextIdToken.isEmpty ||
+        nextRefreshToken == null || nextRefreshToken.isEmpty) {
       throw const FormatException(
         'The authentication response was incomplete.',
       );
@@ -266,7 +268,7 @@ class AppStore extends ChangeNotifier {
       final restoredUid = data['uid'] as String?;
       final refresh = data['refreshToken'] as String?;
       if (restoredUid == null || restoredUid.isEmpty || refresh == null || refresh.isEmpty) {
-        await sessionStorage.delete(key: _sessionKey);
+        await _clearSession();
         return;
       }
       uid = restoredUid;
@@ -289,19 +291,27 @@ class AppStore extends ChangeNotifier {
         }
       }
     } catch (_) {
-      // A damaged or unavailable secure store must not prevent offline use.
+      // Never retain a partially restored identity in memory. A broken
+      // secure store must not expose a previous user's local progress.
+      _resetLocalSession();
       status = 'Could not restore the saved account.';
     }
   }
 
-  Future<void> _clearSession() async {
+  void _resetLocalSession() {
     uid = null;
     email = null;
     displayName = null;
     _idToken = null;
     _refreshToken = null;
     _expiresAt = null;
+    _pendingGoogleToken = null;
+    _pendingGoogleEmail = null;
     _loadProgress();
+  }
+
+  Future<void> _clearSession() async {
+    _resetLocalSession();
     await sessionStorage.delete(key: _sessionKey);
   }
 
@@ -762,9 +772,12 @@ class AppStore extends ChangeNotifier {
 
   Future<void> signOut() async {
     if (busy) return;
-    signOutGoogleIdentity().ignore();
-    _pendingGoogleToken = null;
-    _pendingGoogleEmail = null;
+    try {
+      await signOutGoogleIdentity();
+    } catch (_) {
+      // The REST session is authoritative; an SDK sign-out failure must
+      // never keep access to a previous account in this app.
+    }
     await _clearSession();
     status = 'Signed out. Guest progress restored.';
     notifyListeners();
@@ -801,6 +814,8 @@ class AppStore extends ChangeNotifier {
     }
     final data = jsonDecode(response.body) as Map<String, dynamic>;
     if (data['user_id'] != uid) {
+      await _clearSession();
+      notifyListeners();
       throw const FormatException('Session identity mismatch. Sign in again.');
     }
     _idToken = data['id_token'];
