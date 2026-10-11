@@ -101,5 +101,11 @@ export async function userStore(request, env, fetcher = fetch) {
   const json = await response.json();
   const uid = json.users?.[0]?.localId;
   assert(response.ok && typeof uid === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(uid), 'Session expired; sign in again', 401);
+  // Deploy with REQUIRE_VERIFIED_EMAIL=true to gate cloud writes. Reads and
+  // deletion remain available to avoid locking users out of their own data.
+  // The server-side account lookup, not client-provided claims, is authoritative.
+  if (env.REQUIRE_VERIFIED_EMAIL === 'true' && request.method === 'POST') {
+    assert(json.users[0].emailVerified === true, 'Verify your email address before syncing progress', 403);
+  }
   return { uid, store: new Firestore(env, token, fetcher) };
 }
