@@ -217,3 +217,16 @@ test('Firestore account deletion uses the owner token; missing documents are saf
     'owner', async () => Response.json({ error: { status: 'PERMISSION_DENIED' } }, { status: 403 }));
   await assert.rejects(denied.delete('users/bob/state/progress'), e => e.status === 403);
 });
+
+test('verified-email policy protects writes but permits reads and deletion', async () => {
+  const { userStore } = await import('../src/firestore.mjs');
+  const environment = { FIREBASE_PROJECT_ID: 'acatrain-test', FIREBASE_WEB_API_KEY: 'test-key', REQUIRE_VERIFIED_EMAIL: 'true' };
+  const lookup = async () => Response.json({ users: [{ localId: 'alice', emailVerified: false }] });
+  const makeRequest = method => new Request('https://study.example/v1/progress', { method, headers: { Authorization: 'Bearer test-token' } });
+  await assert.rejects(userStore(makeRequest('POST'), environment, lookup), e => e.status === 403);
+  assert.equal((await userStore(makeRequest('GET'), environment, lookup)).uid, 'alice');
+  assert.equal((await userStore(makeRequest('DELETE'), environment, lookup)).uid, 'alice');
+  const verified = async () => Response.json({ users: [{ localId: 'alice', emailVerified: true }] });
+  assert.equal((await userStore(makeRequest('POST'), environment, verified)).uid, 'alice');
+  assert.equal((await userStore(makeRequest('POST'), { ...environment, REQUIRE_VERIFIED_EMAIL: 'false' }, lookup)).uid, 'alice');
+});
