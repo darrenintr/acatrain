@@ -9,6 +9,7 @@ class MemoryStore {
   data = new Map(); counter = 0;
   async get(path) { return structuredClone(this.data.get(path) ?? null); }
   async delete(path) { this.data.delete(path); }
+  async deleteMany(paths) { for (const path of paths) this.data.delete(path); }
   async commit(writes) {
     for (const w of writes) {
       const current = this.data.get(w.path);
