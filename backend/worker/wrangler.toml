@@ -7,6 +7,7 @@ workers_dev = true
 FIREBASE_PROJECT_ID = "replace-with-project-id"
 FIREBASE_WEB_API_KEY = "replace-with-firebase-web-api-key"
 ALLOWED_ORIGINS = "http://localhost:8080"
+REQUIRE_VERIFIED_EMAIL = "false"
 
 # Set secrets with wrangler secret put (never commit credentials):
 # FIREBASE_SERVICE_ACCOUNT: compact JSON, dedicated roles/datastore.user account
@@ -15,3 +16,20 @@ ALLOWED_ORIGINS = "http://localhost:8080"
 
 [secrets]
 required = ["FIREBASE_SERVICE_ACCOUNT", "MCP_EDIT_TOKEN", "MCP_PUBLISH_TOKEN"]
+
+# Approximate edge rate limits (not billing-grade or a substitute for WAF).
+# Namespace IDs must be distinct within your Cloudflare account.
+[[ratelimits]]
+name = "AUTH_LOOKUP_RATE_LIMITER"
+namespace_id = "2026101101"
+simple = { limit = 600, period = 60 }
+
+[[ratelimits]]
+name = "USER_RATE_LIMITER"
+namespace_id = "2026101102"
+simple = { limit = 120, period = 60 }
+
+[[ratelimits]]
+name = "MCP_RATE_LIMITER"
+namespace_id = "2026101103"
+simple = { limit = 60, period = 60 }
