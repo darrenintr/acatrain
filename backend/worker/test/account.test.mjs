@@ -243,3 +243,28 @@ test('native rate limiter returns 429 and Retry-After without leaking data', asy
   assert.equal(lookedUp, false);
   assert.equal(await enforceRateLimit(undefined, 'offline'), undefined);
 });
+
+test('progress rejects null body and invalid version instead of an internal error', async () => {
+  const worker = workerFor(new MemoryStore());
+  const nullBody = await worker.fetch(request('/v1/progress', 'POST', null), env);
+  assert.equal(nullBody.status, 400);
+  const malformedVersion = await worker.fetch(request('/v1/progress', 'POST', {
+    items: {}, version: 'v'.repeat(129),
+  }), env);
+  assert.equal(malformedVersion.status, 400);
+});
+
+test('Firestore upstream timeout/invalid response/auth/rate limit surface appropriate errors', async () => {
+  const config = { FIREBASE_PROJECT_ID: 'acatrain-test' };
+  const path = 'users/alice/state/progress';
+  const offline = new Firestore(config, 'token', async () => { throw Error('network'); });
+  await assert.rejects(offline.get(path), e => e.status === 502);
+  const invalid = new Firestore(config, 'token', async () => new Response('invalid'));
+  await assert.rejects(invalid.get(path), e => e.status === 502);
+  const expired = new Firestore(config, 'token',
+    async () => Response.json({ error: {} }, { status: 401 }));
+  await assert.rejects(expired.get(path), e => e.status === 401);
+  const quota = new Firestore(config, 'token',
+    async () => Response.json({ error: {} }, { status: 429 }));
+  await assert.rejects(quota.get(path), e => e.status === 429);
+});
