@@ -81,10 +81,23 @@ export class Firestore {
   async delete(path) {
     await this.request(`${this.root}/${path}`, 'DELETE');
   }
+  async deleteMany(paths) {
+    assert(Array.isArray(paths) && paths.length > 0 && paths.length <= 10,
+      'Invalid deletion batch');
+    // Firestore commits all deletes together or none. The caller supplies
+    // only paths assembled from the authenticated Firebase UID.
+    await this.request(`${this.root}:commit`, 'POST', {
+      writes: paths.map(path => ({ delete: `${this.root}/${path}` })),
+    });
+  }
   async get(path) {
     const result = await this.request(`${this.root}/${path}`);
     if (!result) return null;
-    return { value: JSON.parse(result.fields.payload.stringValue), version: result.updateTime };
+    try {
+      return { value: JSON.parse(result.fields.payload.stringValue), version: result.updateTime };
+    } catch {
+      throw new AppError(502, 'Stored Firestore document is invalid');
+    }
   }
   async commit(writes) {
     return this.request(`${this.root}:commit`, 'POST', { writes: writes.map(w => ({
@@ -95,17 +108,51 @@ export class Firestore {
 }
 
 export async function userStore(request, env, fetcher = fetch) {
-  const token = request.headers.get('Authorization')?.match(/^Bearer (.+)$/)?.[1];
-  assert(token && env.FIREBASE_WEB_API_KEY, 'Sign in is required', 401);
-  const response = await fetcher(`https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${encodeURIComponent(env.FIREBASE_WEB_API_KEY)}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ idToken: token }) });
-  const json = await response.json();
-  const uid = json.users?.[0]?.localId;
-  assert(response.ok && typeof uid === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(uid), 'Session expired; sign in again', 401);
-  // Deploy with REQUIRE_VERIFIED_EMAIL=true to gate cloud writes. Reads and
-  // deletion remain available to avoid locking users out of their own data.
-  // The server-side account lookup, not client-provided claims, is authoritative.
-  if (env.REQUIRE_VERIFIED_EMAIL === 'true' && request.method === 'POST') {
-    assert(json.users[0].emailVerified === true, 'Verify your email address before syncing progress', 403);
+  const token = request.headers.get('Authorization')?.match(/^Bearer (\\S{1,8192})$/)?.[1];
+  assert(token, 'Sign in is required', 401);
+  assert(env.FIREBASE_WEB_API_KEY, 'Firebase Authentication is not configured', 503);
+  let response;
+  try {
+    response = await fetcher(`https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${encodeURIComponent(env.FIREBASE_WEB_API_KEY)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ idToken: token }),
+      signal: AbortSignal.timeout(10000),
+    });
+  } catch {
+    throw new AppError(502, 'Authentication service is unavailable');
   }
-  return { uid, store: new Firestore(env, token, fetcher) };
+  let json;
+  try {
+    json = await response.json();
+  } catch {
+    throw new AppError(502, 'Authentication service returned an invalid response');
+  }
+  if (!response.ok) {
+    if ([400, 401, 403].includes(response.status)) {
+      throw new AppError(401, 'Session expired; sign in again');
+    }
+    throw new AppError(502, 'Authentication service is unavailable');
+  }
+  const account = Array.isArray(json?.users) ? json.users[0] : null;
+  const uid = account?.localId;
+  assert(typeof uid === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(uid),
+    'Session expired; sign in again', 401);
+  // Enforce verified email for writes only, without blocking read/export/deletion.
+  if (env.REQUIRE_VERIFIED_EMAIL === 'true' && ['POST', 'PUT'].includes(request.method)) {
+    assert(account.emailVerified === true,
+      'Verify your email address before syncing account data', 403);
+  }
+  const providers = Array.isArray(account.providerUserInfo)
+    ? account.providerUserInfo.map(value => value?.providerId)
+      .filter(id => typeof id === 'string' && id.length <= 64)
+    : [];
+  return {
+    uid,
+    email: typeof account.email === 'string' ? account.email : null,
+    displayName: typeof account.displayName === 'string' ? account.displayName : null,
+    emailVerified: account.emailVerified === true,
+    providers: [...new Set(providers)],
+    store: new Firestore(env, token, fetcher),
+  };
 }
