@@ -163,6 +163,8 @@ export function createWorker(deps = {}) {
         }
         const body = await readBody(request,
           url.pathname === '/v1/profile' ? 4096 : MAX_BYTES + 4096);
+        assert(body && typeof body === 'object' && !Array.isArray(body),
+          'Expected a JSON object');
         if (url.pathname === '/v1/profile') {
           assert(body && typeof body === 'object' && !Array.isArray(body) &&
             Object.keys(body).sort().join(',') === 'profile,version',
@@ -174,8 +176,9 @@ export function createWorker(deps = {}) {
           await store.commit([{ path, value: profile, version: body.version }]);
         } else {
           validateProgress(body.items);
-          assert(body.version === null || typeof body.version === 'string',
-            'version is required');
+          assert(body.version === null ||
+            (typeof body.version === 'string' && body.version.length <= 128),
+            'version must be null or an update-time string');
           await store.commit([{ path, value: body.items, version: body.version }]);
         }
         return finish(json({ ok: true }));
