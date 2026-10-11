@@ -31,3 +31,24 @@ test('a healthy process cannot hide a broken content backend', async () => {
   assert.deepEqual(await verifyDeployment({ base, origin, allowEmpty: true, fetcher: server({ status: 404 }) }),
     { ok: true, empty: true });
 });
+
+test('deploy installs profile rules before serving account-data cleanup', async () => {
+  const workflow = await readFile(
+    new URL('../../../.github/workflows/deploy-cloud.yml', import.meta.url),
+    'utf8',
+  );
+  const rules = workflow.indexOf('- name: Deploy Firestore rules and indexes');
+  const worker = workflow.indexOf('- name: Deploy Cloudflare Worker with secrets');
+  const hosting = workflow.indexOf('- name: Deploy Firebase Hosting');
+  assert.ok(rules >= 0 && worker > rules && hosting > worker);
+  assert.match(workflow, /--var "REQUIRE_VERIFIED_EMAIL:\$REQUIRE_VERIFIED_EMAIL"/);
+  const config = await readFile(new URL('../wrangler.toml', import.meta.url), 'utf8');
+  for (const name of ['AUTH_LOOKUP_RATE_LIMITER', 'USER_RATE_LIMITER', 'MCP_RATE_LIMITER']) {
+    assert.ok(config.includes('name = "' + name + '"'));
+  }
+  const rulesText = await readFile(
+    new URL('../../../firebase/firestore.rules', import.meta.url), 'utf8',
+  );
+  assert.match(rulesText, /match \/users\/\{uid\}\/state\/profile/);
+  assert.match(rulesText, /allow get, delete: if owner\(\)/);
+});

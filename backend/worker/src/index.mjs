@@ -1,6 +1,7 @@
 import { AppError, MAX_BYTES, assert, digest, validId, validateContent, validateProgress } from './content.mjs';
 import { Firestore, accessToken, userStore } from './firestore.mjs';
 import { activePath, saveDraft, publishDraft, rollbackRelease } from './publishing.mjs';
+import { validateProfile, enforceRateLimit } from './account.mjs';
 
 const PROTOCOL = '2025-11-25';
 const schema = (properties, required = []) => ({ type: 'object', properties, required, additionalProperties: false });
@@ -16,8 +17,10 @@ const tools = [
   tool('rollback_release', 'Switch ALL clients back to an existing immutable release. Requires publisher token.', schema({ releaseId: str, expectedActiveReleaseId: str }, ['releaseId', 'expectedActiveReleaseId']), false)
 ];
 const json = (value, status = 200, headers = {}) => new Response(JSON.stringify(value), { status, headers: { 'Content-Type': 'application/json; charset=utf-8', ...headers } });
-async function readBody(request) {
-  assert(request.headers.get('Content-Type')?.includes('application/json'), 'Expected application/json', 415);
+async function readBody(request, maxBytes = MAX_BYTES + 4096) {
+  assert(/^application\/json(?:\s*;|\s*$)/i.test(request.headers.get('Content-Type') ?? ''), 'Expected application/json', 415);
+  const declaredSize = Number(request.headers.get('Content-Length'));
+  assert(!Number.isFinite(declaredSize) || declaredSize <= maxBytes, 'Request body is too large', 413);
   const reader = request.body?.getReader();
   assert(reader, 'Request body is required');
   let total = 0; const chunks = [];
@@ -25,7 +28,7 @@ async function readBody(request) {
     const { done, value } = await reader.read();
     if (done) break;
     total += value.length;
-    if (total > MAX_BYTES + 4096) { await reader.cancel(); throw new AppError(413, 'Request body is too large'); }
+    if (total > maxBytes) { await reader.cancel(); throw new AppError(413, 'Request body is too large'); }
     chunks.push(value);
   }
   const all = new Uint8Array(total); let offset = 0;
@@ -44,6 +47,7 @@ async function roleFor(request, env) {
 }
 async function mcp(request, env, getStore) {
   const role = await roleFor(request, env);
+  await enforceRateLimit(env.MCP_RATE_LIMITER, `mcp:${role}`);
   if (request.method !== 'POST') return new Response(null, { status: 405, headers: { Allow: 'POST' } });
   const accept = request.headers.get('Accept') ?? '';
   assert(accept.includes('application/json') && accept.includes('text/event-stream'), 'Accept must include application/json and text/event-stream', 406);
@@ -102,30 +106,81 @@ export function createWorker(deps = {}) {
         out.headers.set('Cache-Control', out.headers.get('Cache-Control') ?? 'no-store');
         return out;
       };
-      if (request.method === 'OPTIONS') return finish(new Response(null, { status: 204, headers: { 'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS', 'Access-Control-Allow-Headers': 'Authorization, Content-Type, Accept, MCP-Protocol-Version, If-None-Match', 'Access-Control-Max-Age': '600' } }));
+      if (request.method === 'OPTIONS') return finish(new Response(null, { status: 204, headers: { 'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS', 'Access-Control-Allow-Headers': 'Authorization, Content-Type, Accept, MCP-Protocol-Version, If-None-Match', 'Access-Control-Max-Age': '600' } }));
       const url = new URL(request.url);
       const getStore = deps.adminStore ? async () => deps.adminStore : async () => new Firestore(env, await accessToken(env));
       if (url.pathname === '/health' && request.method === 'GET') return finish(json({ ok: true, service: 'acatrain', configured: !!(env.FIREBASE_PROJECT_ID && env.FIREBASE_SERVICE_ACCOUNT) }));
       if (url.pathname === '/mcp') return finish(await mcp(request, env, getStore));
-      if (url.pathname === '/v1/progress') {
-        assert(['GET', 'POST', 'DELETE'].includes(request.method), 'Method not allowed', 405);
-        const { uid, store } = await (deps.userStore ?? userStore)(request, env);
-        const path = `users/${uid}/state/progress`;
+      if (['/v1/progress', '/v1/me', '/v1/profile', '/v1/account/data'].includes(url.pathname)) {
+        const methods = url.pathname === '/v1/progress' ? ['GET', 'POST', 'DELETE']
+          : url.pathname === '/v1/profile' ? ['GET', 'PUT']
+          : url.pathname === '/v1/me' ? ['GET'] : ['GET', 'DELETE'];
+        assert(methods.includes(request.method), 'Method not allowed', 405);
+        // Best-effort edge ingress limit before spending a Firebase Auth lookup.
+        // School/campus IPs can be shared; use a generous limit and WAF alongside it.
+        const edgeIP = request.headers.get('CF-Connecting-IP');
+        if (edgeIP) await enforceRateLimit(env.AUTH_LOOKUP_RATE_LIMITER, `lookup:${edgeIP}`);
+        const account = await (deps.userStore ?? userStore)(request, env);
+        const { uid, store } = account;
+        await enforceRateLimit(env.USER_RATE_LIMITER, `user:${uid}`);
+        const progressPath = `users/${uid}/state/progress`;
+        const profilePath = `users/${uid}/state/profile`;
         if (request.method === 'DELETE') {
-          // The Firebase user must still exist while its ID token authorizes
-          // deleting personal study data. The client calls this before
-          // Firebase Authentication account deletion.
-          await store.delete(path);
+          // Delete both known user documents in one Firestore commit. This does
+          // not delete the Firebase Auth identity; the client performs that next.
+          // The legacy progress DELETE is deliberately retained for old clients.
+          await store.deleteMany([progressPath, profilePath]);
           return finish(json({ ok: true }));
         }
+        if (url.pathname === '/v1/me') {
+          return finish(json({
+            uid, email: account.email ?? null,
+            emailVerified: account.emailVerified ?? false,
+            displayName: account.displayName ?? null,
+            providers: account.providers ?? [],
+          }));
+        }
+        if (url.pathname === '/v1/account/data') {
+          const [progress, profile] = await Promise.all([
+            store.get(progressPath), store.get(profilePath),
+          ]);
+          return finish(json({
+            uid, email: account.email ?? null,
+            progress: progress?.value ?? {},
+            profile: profile?.value ?? null,
+            versions: {
+              progress: progress?.version ?? null,
+              profile: profile?.version ?? null,
+            },
+          }));
+        }
+        const path = url.pathname === '/v1/profile' ? profilePath : progressPath;
         if (request.method === 'GET') {
           const state = await store.get(path);
-          return finish(json({ items: state?.value ?? {}, version: state?.version ?? null }));
+          return finish(json(url.pathname === '/v1/profile'
+            ? { profile: state?.value ?? null, version: state?.version ?? null }
+            : { items: state?.value ?? {}, version: state?.version ?? null }));
         }
-        const body = await readBody(request);
-        validateProgress(body.items);
-        assert(body.version === null || typeof body.version === 'string', 'version is required');
-        await store.commit([{ path, value: body.items, version: body.version }]);
+        const body = await readBody(request,
+          url.pathname === '/v1/profile' ? 4096 : MAX_BYTES + 4096);
+        assert(body && typeof body === 'object' && !Array.isArray(body),
+          'Expected a JSON object');
+        if (url.pathname === '/v1/profile') {
+          assert(body && typeof body === 'object' && !Array.isArray(body) &&
+            Object.keys(body).sort().join(',') === 'profile,version',
+            'Expected profile and version');
+          const profile = validateProfile(body.profile);
+          assert(body.version === null ||
+            (typeof body.version === 'string' && body.version.length <= 128),
+            'version must be null or an update-time string');
+          await store.commit([{ path, value: profile, version: body.version }]);
+        } else {
+          validateProgress(body.items);
+          assert(body.version === null ||
+            (typeof body.version === 'string' && body.version.length <= 128),
+            'version must be null or an update-time string');
+          await store.commit([{ path, value: body.items, version: body.version }]);
+        }
         return finish(json({ ok: true }));
       }
       assert(request.method === 'GET', 'Method not allowed', 405);
@@ -151,6 +206,8 @@ export function createWorker(deps = {}) {
       const headers = {};
       if (origin && (env.ALLOWED_ORIGINS ?? '').split(',').map(s => s.trim()).includes(origin)) { headers['Access-Control-Allow-Origin'] = origin; headers.Vary = 'Origin'; }
       headers['Cache-Control'] = 'no-store';
+      headers['X-Content-Type-Options'] = 'nosniff';
+      if (error instanceof AppError && error.status === 429) headers['Retry-After'] = '60';
       return json({ error: error instanceof AppError ? error.message : 'Internal server error' }, error instanceof AppError ? error.status : 500, headers);
     }
   } };

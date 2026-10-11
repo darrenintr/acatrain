@@ -27,6 +27,7 @@ jobs:
       FIREBASE_PROJECT_ID: ${{ vars.FIREBASE_PROJECT_ID }}
       FIREBASE_WEB_API_KEY: ${{ vars.FIREBASE_WEB_API_KEY }}
       ACATRAIN_API_URL: ${{ vars.ACATRAIN_API_URL }}
+      REQUIRE_VERIFIED_EMAIL: ${{ vars.REQUIRE_VERIFIED_EMAIL || 'false' }}
       CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
       EXTRA_ALLOWED_ORIGINS: ${{ vars.EXTRA_ALLOWED_ORIGINS }}
 
@@ -179,6 +180,20 @@ jobs:
             --dart-define=FIREBASE_AUTH_DOMAIN="$FIREBASE_AUTH_DOMAIN" \
             --dart-define=ACATRAIN_AUTH_CONTINUE_URL="https://${FIREBASE_PROJECT_ID}.web.app"
 
+      # Deploy access rules first: this Worker deletes user progress/profile
+      # together, and old rules would reject the profile delete.
+      - name: Authenticate Firebase deployment
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.FIREBASE_DEPLOY_SERVICE_ACCOUNT }}
+
+      - name: Deploy Firestore rules and indexes
+        run: |
+          npx firebase-tools@latest deploy \
+            --project "$FIREBASE_PROJECT_ID" \
+            --only firestore:rules,firestore:indexes \
+            --non-interactive
+
       - name: Deploy Cloudflare Worker with secrets
         working-directory: backend/worker
         env:
@@ -208,7 +223,8 @@ jobs:
             --secrets-file "$secrets_file" \
             --var "FIREBASE_PROJECT_ID:$FIREBASE_PROJECT_ID" \
             --var "FIREBASE_WEB_API_KEY:$FIREBASE_WEB_API_KEY" \
-            --var "ALLOWED_ORIGINS:$allowed"
+            --var "ALLOWED_ORIGINS:$allowed" \
+            --var "REQUIRE_VERIFIED_EMAIL:$REQUIRE_VERIFIED_EMAIL"
 
       - name: Verify Worker
         id: verify_worker
@@ -231,16 +247,11 @@ jobs:
       - name: Verify published content
         run: node tool/verify-deployment.mjs
 
-      - name: Authenticate Firebase deployment
-        uses: google-github-actions/auth@v2
-        with:
-          credentials_json: ${{ secrets.FIREBASE_DEPLOY_SERVICE_ACCOUNT }}
-
-      - name: Deploy Firestore rules, indexes and Firebase Hosting
+      - name: Deploy Firebase Hosting
         run: |
           npx firebase-tools@latest deploy \
             --project "$FIREBASE_PROJECT_ID" \
-            --only firestore:rules,firestore:indexes,hosting \
+            --only hosting \
             --non-interactive
 
       - name: Deployment summary

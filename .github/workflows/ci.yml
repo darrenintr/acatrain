@@ -26,6 +26,9 @@ jobs:
           node-version: '22'
       - run: npm test --prefix backend/worker
       - run: node tool/check-content.mjs
+      - name: Validate Worker bundle and bindings
+        working-directory: backend/worker
+        run: npx --yes wrangler@4 deploy --dry-run --outdir "$RUNNER_TEMP/worker-bundle"
 
   flutter:
     name: Flutter / Web / Android APK
