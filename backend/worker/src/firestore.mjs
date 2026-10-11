@@ -108,7 +108,7 @@ export class Firestore {
 }
 
 export async function userStore(request, env, fetcher = fetch) {
-  const token = request.headers.get('Authorization')?.match(/^Bearer (\\S{1,8192})$/)?.[1];
+  const token = request.headers.get('Authorization')?.match(/^Bearer (\S{1,8192})$/)?.[1];
   assert(token, 'Sign in is required', 401);
   assert(env.FIREBASE_WEB_API_KEY, 'Firebase Authentication is not configured', 503);
   let response;
