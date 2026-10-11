@@ -66,17 +66,34 @@ export class Firestore {
     this.token = token; this.fetcher = (...args) => fetcher(...args);
   }
   async request(path, method = 'GET', body) {
-    const response = await this.fetcher(`https://firestore.googleapis.com/v1/${path}`, { method, headers: { Authorization: `Bearer ${this.token}`, 'Content-Type': 'application/json' }, ...(body ? { body: JSON.stringify(body) } : {}) });
+    let response;
+    try {
+      response = await this.fetcher(`https://firestore.googleapis.com/v1/${path}`, {
+        method,
+        headers: { Authorization: `Bearer ${this.token}`, 'Content-Type': 'application/json' },
+        ...(body ? { body: JSON.stringify(body) } : {}),
+        signal: AbortSignal.timeout(15000),
+      });
+    } catch {
+      throw new AppError(502, 'Firestore service is unavailable');
+    }
     if (response.status === 404 && (method === 'GET' || method === 'DELETE')) return null;
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
       if ([409, 412].includes(response.status) || ['FAILED_PRECONDITION', 'ABORTED', 'ALREADY_EXISTS'].includes(error.error?.status)) {
         throw new AppError(409, 'Content changed; reload before retrying');
       }
-      throw new AppError(response.status === 403 ? 403 : 502, response.status === 403 ? 'Firestore access denied' : 'Firestore request failed');
+      if (response.status === 401) throw new AppError(401, 'Session expired; sign in again');
+      if (response.status === 429) throw new AppError(429, 'Firestore rate limit exceeded');
+      throw new AppError(response.status === 403 ? 403 : 502,
+        response.status === 403 ? 'Firestore access denied' : 'Firestore request failed');
     }
     if (method === 'DELETE') return null;
-    return response.json();
+    try {
+      return await response.json();
+    } catch {
+      throw new AppError(502, 'Firestore service returned an invalid response');
+    }
   }
   async delete(path) {
     await this.request(`${this.root}/${path}`, 'DELETE');
