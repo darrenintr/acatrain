@@ -9,7 +9,8 @@ An offline-first Flutter study app with Firebase-backed content and a Cloudflare
 - Complete content-release downloads, SHA-256 checks, compatibility validation, last-known-good cache and session snapshots. Updating a published study set does not require an APK update.
 - Firebase Authentication over REST with email/password, account creation, password reset and passwordless email-link sign-in. Google sign-in is available on Android, iOS, Web, Linux, macOS and Windows with platform OAuth configuration. When an email already has a password account, sign in with that password and connect Google from Personal info; both methods then use the same account and progress. A dedicated **Manage account** page supports name changes, checking/resending email verification, changing passwords, connecting Google, progress JSON export and permanent account deletion. Registration requests a verification email; verification is not yet mandatory for syncing. Guest and account progress are isolated; account tokens are kept in the platform secure-storage integration, not in SharedPreferences.
 - Manual cloud progress merge with per-item last-write-wins and optimistic concurrency retry. No automatic uploads of guest progress.
-- Account deletion first makes an authenticated `DELETE /v1/progress` request to erase the account-owned Firestore progress document, then deletes the Firebase Authentication user and local account progress. If cloud deletion fails, the account is preserved; if Auth deletion subsequently fails, the cloud progress has already been erased and the user must retry. A real deployment must update the Worker **before** shipping an app build that exposes Delete account.
+- Backend-first account APIs: `GET /v1/me` for trusted Firebase identity, `GET/PUT /v1/profile` for isolated learner presentation preferences, and `GET/DELETE /v1/account/data` for account JSON export and Firestore data cleanup. Existing Flutter clients continue using their current screens; automatic profile-sync UI is not yet connected. The Worker uses native Cloudflare rate limiting, which is approximate and must be paired with monitoring.
+- Account deletion first makes an authenticated `DELETE /v1/progress` request (backward-compatible with old apps) that removes **both progress and profile** in one Firestore commit, then deletes the Firebase Authentication user and local account progress. If cloud deletion fails, the account is preserved; if Auth deletion subsequently fails, cloud data has already been erased and the user must retry. Deploy the updated **Firestore rules before the Worker**; the Deploy Cloud workflow enforces this order.
 - MCP draft editing, validation, atomic publishing, immutable releases and rollback, with separate editor/publisher credentials.
 - One app icon on every platform (Android adaptive + themed icon, iOS, Web/PWA, macOS, Windows, Linux) and an animated launch screen that plays while the app loads; native splash colours match so the hand-off is seamless.
 - Demo plans (Free, Starter, Pro, Max 20x) that re-theme the app. Checkout is simulated end to end but behaves like the real thing: Google Play (payment-method picker, fingerprint prompt), App Store (double-click side button, Face ID, confirmation alert) and Stripe (card entry with brand detection and validation, Stripe's test-card outcomes including declines and 3-D Secure). Monthly or yearly billing, proration credit on upgrades, renewals and receipts while you are away, cancel and resume, and a tilting membership card. Nothing is ever contacted or charged, and no card number is stored.
@@ -72,6 +73,7 @@ In **GitHub > acatrain > Settings > Secrets and variables > Actions**, create th
 | `CLOUDFLARE_ACCOUNT_ID` | Cloudflare Account ID |
 | `ACATRAIN_API_URL` | Expected Worker URL, for example `https://acatrain-api.example.workers.dev` |
 | `EXTRA_ALLOWED_ORIGINS` | Optional comma-separated extra Web origins; leave unset if unused |
+| `REQUIRE_VERIFIED_EMAIL` | Optional `true` to require email verification for Worker progress/profile writes; defaults to `false` |
 
 Create these **Repository secrets**:
 
@@ -179,6 +181,14 @@ Each set has stable IDs. Increment an item's `revision` when its meaning or corr
 Current limits: **30 sets, 200 items, 128 KiB per complete content bundle**. This intentionally keeps the MVP within one Firestore document and modest Worker CPU/memory usage. Publication is a single atomic Firestore commit with preconditions, including an audit record. Concurrent editing/publishing fails instead of silently overwriting. Rollback only changes the manifest pointer and creates an audit record.
 
 The public manifest has a 30-second cache. Apps check at startup, on resume after five minutes, and on manual refresh. This is pull-based content sync, not an always-on push channel. Active study sessions use a snapshot; new content applies to subsequent sessions.
+
+## User-data API and account backend
+
+The backend validates Firebase ID tokens through Firebase Authentication, derives the UID on the server and uses that token for Firestore owner-only access. User profiles contain only `displayName`, `languageCode` (`en` or `zh`) and `appearance` (`system`, `light` or `dark`). They cannot set roles, entitlements or payment state. Profile and progress writes use Firestore update-time versions; a stale version returns HTTP 409. User data endpoints are never edge-cached.
+
+Authenticated endpoints: `GET /v1/me`, `GET|PUT /v1/profile`, `GET|DELETE /v1/account/data`, and the existing `GET|POST|DELETE /v1/progress`. The comprehensive delete removes Firestore profile and progress but **not** the Firebase Auth identity: the client performs that second operation. Enabling `REQUIRE_VERIFIED_EMAIL=true` blocks unverified accounts from writing through the Worker, but does not block exporting or deleting data. Direct owner-authorized Firestore access is not restricted by that Worker-only switch.
+
+The Wrangler config includes three approximate rate limiters for Firebase account lookup, per-user API calls, and MCP roles. Their namespace IDs must be unique to your Cloudflare account; review usage and false positives, especially on shared campus IP addresses. See `docs/architecture.md` for exact API request formats, rollout sequence and remaining security caveats.
 
 ## What is not claimed yet
 
